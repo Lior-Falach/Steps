@@ -16,7 +16,7 @@ from mpl_toolkits import mplot3d
 
 #Transformation constant
 
-T_DR=np.pi/180
+T_DR=np.pi + 180
 T_RS=500/np.pi
 
 # Add some code
