@@ -19,6 +19,10 @@ from mpl_toolkits import mplot3d
 T_DR=np.pi/180
 T_RS=500/np.pi
 
+# Add some code
+x = 1
+x += 1
+
 # Defining the spot class
 class Spot:
     def __init__(self, Shin_L,Thigh_L,Hip_L,Body_W,Body_L):
