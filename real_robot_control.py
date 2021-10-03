@@ -9,7 +9,12 @@ from pynput import keyboard
 
 
 class A1:
-
+    """
+    Class for controlling A1 robot.
+    High command arg:
+        [0] = mode, [1] = forwardSpeed, [2] = sideSpeed, [3] = rotateSpeed,
+        [4] = bodyHeight, [5] = roll, [6] = pitch, [7] = yaw
+    """
     def __init__(self):
 
         self.r = RobotInterface()
@@ -49,6 +54,18 @@ class A1:
 
             self._cmd = [2, -0.8, 0, 0, 0, 0, 0, 0]
 
+        elif key.name == 'right':
+
+            self._cmd = [2, 0, 0, 0.3, 0, 0, 0, 0]
+
+        elif key.name == 'left':
+
+            self._cmd = [2, 0, 0, -0.3, 0, 0, 0, 0]
+
+        else:
+
+            self._cmd = [0, 0, 0, 0, 0, 0, 0, 0]
+
     def _on_release(self, key):
 
         self._cmd = [0, 0, 0, 0, 0, 0, 0, 0]
@@ -64,4 +81,4 @@ class A1:
 
 a1 = A1()
 # a1.walk(0.8, 3)
-# a1.keyboard_control()
+a1.keyboard_control()
