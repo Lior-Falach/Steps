@@ -30,6 +30,7 @@ class A1:
         self._connect = True
 
         while self._connect:
+
             print(self._cmd)
             self.r.send_high_command(self._cmd)
             sleep(0.5)
@@ -48,7 +49,7 @@ class A1:
 
             self._cmd = [2, -0.8, 0, 0, 0, 0, 0, 0]
 
-    def _on_release(self):
+    def _on_release(self, key):
 
         self._cmd = [0, 0, 0, 0, 0, 0, 0, 0]
 
@@ -58,7 +59,9 @@ class A1:
 
         with keyboard.Listener(on_press=self._on_press, on_release=self._on_release) as listener:
             listener.join()
+            print('dead')
 
 
 a1 = A1()
-a1.walk(0.8, 3)
+# a1.walk(0.8, 3)
+# a1.keyboard_control()
