@@ -23,7 +23,15 @@ class A1:
         self._connect = False
 
     def walk(self, speed, moving_time):
+        """
+        Make the robot walk in a given speed for a given time
+        Args:
+            speed: walking speed, scaled between -1 to 1.
+            moving_time: time to move in the given speed in seconds
 
+        Returns:
+
+        """
         cmd = [2, speed, 0, 0, 0, 0, 0, 0]  # high command for moving the robot
         start = time()
 
@@ -71,7 +79,11 @@ class A1:
         self._cmd = [0, 0, 0, 0, 0, 0, 0, 0]
 
     def keyboard_control(self):
+        """
+        Control the robot using you keyboard's arrows
+        Returns:
 
+        """
         threading.Thread(target=self._send_cmd).start()
 
         with keyboard.Listener(on_press=self._on_press, on_release=self._on_release) as listener:
