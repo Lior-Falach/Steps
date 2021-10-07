@@ -14,7 +14,6 @@ The interface between ROS and real robot: `unitree_legged_real`
 
 # Dependencies
 * [unitree_legged_sdk](https://github.com/unitreerobotics): If your robot is suitable for `unitree_legged_sdk`, then you do not need `aliengo_sdk`.
-* [aliengo_sdk](https://github.com/unitreerobotics): If your robot is suitable for `aliengo_sdk`, then you do not need `unitree_legged_sdk`.
 
 # Configuration
 Make sure the following exist in your `~/.bashrc` file or export them in terminal. `melodic`, `gazebo-8`, `~/catkin_ws`, `amd64` and the paths to `unitree_legged_sdk` should be replaced in your own case. 
@@ -38,11 +37,13 @@ export UNITREE_PLATFORM="amd64"
 
 # Build
 You can use catkin_make to build ROS packages. First copy the package folder to `~/catkin_ws/src`, then:
+
+Before compiling `unitree_legged_real`, please make sure that the `unitree_legged_msgs` has been compiled.
+
 ```
 cd ~/catkin_ws
 catkin_make
 ```
-Before compiling `unitree_legged_real`, please make sure that the `unitree_legged_msgs` has been compiled.
 
 # Setup the net connection
 First, please connect the network cable between your PC and robot. Then run `ifconfig` in a terminal, you will find your port name. For example, `enx000ec6612921`.
