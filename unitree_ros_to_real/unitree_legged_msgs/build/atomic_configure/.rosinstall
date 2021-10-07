@@ -1,0 +1,2 @@
+- setup-file:
+    local-name: /home/evyatar/catkin_ws/src/unitree_ros_to_real-3.2.1/unitree_legged_msgs/build/devel/setup.sh
