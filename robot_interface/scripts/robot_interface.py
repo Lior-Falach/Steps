@@ -11,9 +11,9 @@ def robot_movement(data, args):
     if data.data == 'walk':
 
         # Init args
-        r = args[0]
-        speed = 0.2  # scaled between -1 to 1
-        moving_time = 2  # seconds
+        r: A1 = args[0]
+        speed: float = 0.2  # scaled between -1 to 1
+        moving_time: int = 2  # seconds
 
         # Construct the command
         cmd = [2, speed, 0, 0, 0, 0, 0, 0]  # high command for moving the robot
@@ -24,7 +24,7 @@ def robot_movement(data, args):
         # Execute the command
         start = time()
         while time() - start < moving_time:
-            r.send_high_command(cmd)
+            r.high_command(cmd)
 
         # Log
         rospy.loginfo(f'The command have been done successfully')
@@ -41,7 +41,7 @@ def robot_state():
 
     # Init publisher & node
     pub = rospy.Publisher('imu', IMU, queue_size=10)
-    # rospy.Subscriber('robot_movement', String, robot_movement, (i, ))
+    rospy.Subscriber('robot_movement', String, robot_movement, (a1, ))
     rospy.init_node('robot_state', anonymous=True)
     rate = rospy.Rate(10)  # 10hz
 

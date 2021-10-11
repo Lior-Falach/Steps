@@ -46,6 +46,18 @@ class A1:
     def get_temperature(self) -> int:
         return self.r.receive_observation().imu.temperature
 
+    def high_command(self, cmd: np.array):
+        """
+        The method send high command to the robot.
+        The shape of cmd need to be (8, ) where element is according to the
+        following description:
+                    [0] = mode, [1] = forwardSpeed, [2] = sideSpeed, [3] = rotateSpeed,
+                    [4] = bodyHeight, [5] = roll, [6] = pitch, [7] = yaw.
+        Args:
+            cmd: High command to send to the robot, according the abovementioned description.
 
-# a1.walk(0.8, 3)
-# a1.keyboard_control()
+        Returns:
+
+        """
+
+        self.r.send_high_command(cmd)
