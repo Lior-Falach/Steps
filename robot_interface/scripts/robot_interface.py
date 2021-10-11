@@ -3,7 +3,7 @@ from time import time
 import rospy
 from std_msgs.msg import String
 from unitree_legged_msgs.msg import IMU
-from robot_interface import RobotInterface  # pytype: disable=import-error
+from a1 import A1
 
 
 def robot_movement(data, args):
@@ -35,27 +35,25 @@ def robot_movement(data, args):
 
 
 def robot_state():
-    # Init the robot interface
-    i = RobotInterface()
-    i.send_command([0] * 60)
+
+    # Declare A1 instance
+    a1 = A1()
 
     # Init publisher & node
     pub = rospy.Publisher('imu', IMU, queue_size=10)
-    rospy.Subscriber('robot_movement', String, robot_movement, (i, ))
+    # rospy.Subscriber('robot_movement', String, robot_movement, (i, ))
     rospy.init_node('robot_state', anonymous=True)
     rate = rospy.Rate(10)  # 10hz
 
     # Start node
     while not rospy.is_shutdown():
-        # Get the robot's imu state using the interface
-        s = i.receive_observation()
 
         # Publish the IMU state
         # rospy.loginfo('some log message')
-        pub.publish(s.imu.quaternion,
-                    s.imu.gyroscope,
-                    s.imu.accelerometer,
-                    s.imu.temperature)
+        pub.publish(a1.get_quaternion(),
+                    a1.get_gyroscope(),
+                    a1.get_accelerometer(),
+                    a1.get_temperature())
 
         # Sleep
         rate.sleep()
