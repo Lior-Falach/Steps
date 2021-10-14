@@ -15,37 +15,6 @@ class A1:
         self.r = RobotInterface()
         self.r.send_command([0] * 60)
 
-    # def get_quaternion(self) -> np.array:
-    #     """
-    #     Get the current quaternion of the robot.
-    #     The quaternion is normalized as (w, x, y, z).
-    #     Returns:
-    #         Array with shape (4, )
-    #     """
-    #
-    #     return self.r.receive_observation().imu.quaternion
-    #
-    # def get_gyroscope(self) -> np.array:
-    #     """
-    #     Get the current gyroscope of the robot.
-    #     The angular velocity in units [rad/s]
-    #     Returns:
-    #         Array with shape (3, )
-    #     """
-    #     return self.r.receive_observation().imu.gyroscope
-    #
-    # def get_accelerometer(self) -> np.array:
-    #     """
-    #     Get the current accelerometer of the robot.
-    #     The accelerometer in units [m / s^2]
-    #     Returns:
-    #         Array with shape (3, )
-    #     """
-    #     return self.r.receive_observation().imu.accelerometer
-    #
-    # def get_temperature(self) -> int:
-    #     return self.r.receive_observation().imu.temperature
-
     def high_command(self, cmd: np.array):
         """
         The method send high command to the robot.

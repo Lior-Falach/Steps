@@ -3,7 +3,6 @@ from time import time
 import rospy
 from std_msgs.msg import String
 from unitree_legged_msgs.msg import A1LowState
-from unitree_legged_msgs.msg import IMU
 from a1 import A1
 
 
