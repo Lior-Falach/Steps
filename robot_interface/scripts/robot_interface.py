@@ -39,9 +39,13 @@ def robot_state():
     # Declare A1 instance
     a1 = A1()
 
-    # Init publisher & node
+    # Init keyboard subscriber
+    rospy.Subscriber('keypress', String, robot_movement, (a1, ))
+
+    # Init publisher
     pub = rospy.Publisher('imu', IMU, queue_size=10)
-    rospy.Subscriber('robot_movement', String, robot_movement, (a1, ))
+
+    # Init node
     rospy.init_node('robot_state', anonymous=True)
     rate = rospy.Rate(10)  # 10hz
 

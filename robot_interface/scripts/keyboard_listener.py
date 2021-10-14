@@ -8,7 +8,7 @@ class KeyboardPublisher:
 
     def __init__(self):
         # Logging the node start
-        rospy.loginfo("Starting node keyboard_publisher")
+        rospy.loginfo("Starting node keyboard_publisher\nPress `Esc` and then `ctrl + C to kill the node")
 
         # Initialise the node
         rospy.init_node("keypress_publisher", anonymous=True)
@@ -20,11 +20,11 @@ class KeyboardPublisher:
         self.keyboard_publisher.publish(key_press)
 
     def on_press(self, key):
-        # print(key)
+        print(key)
         self.publish_keypress(key)
 
     def on_release(self, key):
-        # print(f'{key} release')
+        print(f'{key} release')
         if key == Key.esc:
             return False
 
