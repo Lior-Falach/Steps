@@ -5,23 +5,12 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
-  message_generation
 )
 
 
 ################################################
 ## Declare ROS messages, services and actions ##
 ################################################
-
-add_message_files(
-  FILES
-  LowState.msg
-)
-
-generate_messages(
-  DEPENDENCIES
-  std_msgs
-)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -35,7 +24,7 @@ generate_messages(
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES robot_interface
-   CATKIN_DEPENDS message_runtime
+#  CATKIN_DEPENDS message_runtime
 #  DEPENDS system_lib
 )
 
