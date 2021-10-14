@@ -2,6 +2,7 @@
 from time import time
 import rospy
 from std_msgs.msg import String
+from unitree_legged_msgs.msg import A1LowState
 from unitree_legged_msgs.msg import IMU
 from a1 import A1
 
@@ -43,7 +44,7 @@ def robot_state():
     rospy.Subscriber('keypress', String, robot_movement, (a1, ))
 
     # Init publisher
-    pub = rospy.Publisher('imu', IMU, queue_size=10)
+    pub = rospy.Publisher('low_state', A1LowState, queue_size=10)
 
     # Init node
     rospy.init_node('robot_state', anonymous=True)
@@ -54,10 +55,7 @@ def robot_state():
 
         # Publish the IMU state
         # rospy.loginfo('some log message')
-        pub.publish(a1.get_quaternion(),
-                    a1.get_gyroscope(),
-                    a1.get_accelerometer(),
-                    a1.get_temperature())
+        pub.publish(*a1.low_state())
 
         # Sleep
         rate.sleep()
