@@ -4,7 +4,7 @@ from math import pi, cos, sin, atan2, sqrt
 
 # Could we define the parameters (Shin_L,...,Body_L) to apply to all models?
 
-class A1_FK_IK:
+class A1_FIK:
 
     def __init__(self):
         #Define the parameters
