@@ -37,19 +37,19 @@ class A1:
 
         Returns:
             The variables for the LowState message:
-                [q, dq, ddq, footForce, quaternion, gyroscope, accelerometer]
+                [q, dq, ddq, tau, footForce, quaternion, gyroscope, accelerometer]
         """
 
         # Get observation
         o = self.r.receive_observation()
 
         # Get q, dq, ddq vectors
-        q, dq, ddq, Tau = [], [], [], []
+        q, dq, ddq, tau = [], [], [], []
 
         for m in o.motorState[:12]:
             q.append(m.q_raw)
             dq.append(m.dq_raw)
             ddq.append(m.ddq_raw)
-            Tau.append(m.tauEst)
+            tau.append(m.tauEst)
 
-        return q, dq, ddq, o.footForce, Tau, o.imu.quaternion, o.imu.gyroscope, o.imu.accelerometer
+        return q, dq, ddq, o.footForce, tau, o.imu.quaternion, o.imu.gyroscope, o.imu.accelerometer
