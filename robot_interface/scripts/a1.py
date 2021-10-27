@@ -44,11 +44,12 @@ class A1:
         o = self.r.receive_observation()
 
         # Get q, dq, ddq vectors
-        q, dq, ddq = [], [], []
+        q, dq, ddq, Tau = [], [], [], []
 
         for m in o.motorState[:12]:
             q.append(m.q_raw)
             dq.append(m.dq_raw)
             ddq.append(m.ddq_raw)
+            Tau.append(m.tauEst)
 
-        return q, dq, ddq, o.footForce, o.imu.quaternion, o.imu.gyroscope, o.imu.accelerometer
+        return q, dq, ddq, o.footForce, Tau, o.imu.quaternion, o.imu.gyroscope, o.imu.accelerometer
