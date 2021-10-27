@@ -47,8 +47,8 @@ class A1:
         q, dq, ddq = [], [], []
 
         for m in o.motorState[:12]:
-            q.append(m.q)
-            dq.append(m.dq)
-            ddq.append(m.ddq)
+            q.append(m.q_raw)
+            dq.append(m.dq_raw)
+            ddq.append(m.ddq_raw)
 
         return q, dq, ddq, o.footForce, o.imu.quaternion, o.imu.gyroscope, o.imu.accelerometer

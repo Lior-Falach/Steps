@@ -3,20 +3,29 @@ import numpy as np
 from math import pi, cos, sin, atan2, sqrt
 
 # Could we define the parameters (Shin_L,...,Body_L) to apply to all models?
-
+Shin_L=0.13
+Thigh_L=0.105
+Hip_L=0.05
+Body_W=0.08
+Body_L=0.222
 class A1_FIK:
 
     def __init__(self):
         #Define the parameters
-        self.S_L = Shin_L "Foot to Knee"
-        self.T_L = Thigh_L "Knee to Hip"
-        self.H_L = Hip_L "Hip to sholder"
-        self.B_W = Body_W "Main body width"
-        self.B_L = Body_L "Main body length"
+        self.S_L = Shin_L #"Foot to Knee"
+        self.T_L = Thigh_L #"Knee to Hip"
+        self.H_L = Hip_L #"Hip to sholder"
+        self.B_W = Body_W #"Main body width"
+        self.B_L = Body_L #"Main body length"
         # order of angels is shoulder, hip,knee and each row represents a leg
         self.Joint_Ang = np.zeros((4, 3))
         # Initialization of the The foot positions
         self.F_pos = np.zeros((4, 4))  # this is in body frame note that effectively this is a 4X3 array last cullum is zeros
+        # Initialization of the The foot positions
+        self.S_pos = np.zeros((4, 4))  # this is in body frame note that effectively this is a 4X3 array last cullum is zeros
+        # Initialization of the The foot positions
+        self.K_pos = np.zeros((4, 4))  # this is in body frame note that effectively this is a 4X3 array last cullum is zeros
+
 
         # The following array contains the tarnslation needed to construct the homogeneous transformation
         # each row corresponds to a leg in order (LF,RF,LR,RR)
@@ -79,6 +88,8 @@ class A1_FIK:
         T12, DT12 = self.T12_fun(ii)
         T23, DT23 = self.T23_fun(ii)
 
+        self.S_pos[ii] = np.matmul(T01, np.matmul(T12, np.array([0, 0, 0, 1])))
+        self.K_pos[ii] = np.matmul(T01, np.matmul(T12, np.matmul(T23, np.array([0, 0, 0, 1]))))
         self.F_pos[ii] = np.matmul(T01, np.matmul(T12, np.matmul(T23, np.array([0, 0, -self.S_L, 1]))))
 
     def Inv_Kin(self, ii, DX):
