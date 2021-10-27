@@ -2,7 +2,7 @@
 import rospy
 import time
 from unitree_legged_msgs.msg import A1LowState
-from std_msgs.msg import Int16MultiArray
+from unitree_legged_msgs.msg import R_State_imuc
 import numpy as np
 
 
@@ -21,8 +21,8 @@ class Est_IMUcentric:
         # --- Create the Subscriber to joint_ang  topic
         self.ros_sub_state = rospy.Subscriber("/low_state", A1LowState, self.Contact_update, queue_size=1)
         rospy.loginfo("> Subscriber to low_state correctly initialized")
-        self.ros_pub_touch = rospy.Publisher("/loc_IMU_centric", Int16MultiArray, queue_size=1)
-        rospy.loginfo("> Publisher to touch correctly initialized")
+        self.ros_pub_touch = rospy.Publisher("/pos_imuc", R_State_imuc, queue_size=1)
+        rospy.loginfo("> Publisher to pos_imuc correctly initialized")
         self._last_time_state_rcv = time.time()
 
         self.alpha = 0.5 # Smoothing factor for the estimate
