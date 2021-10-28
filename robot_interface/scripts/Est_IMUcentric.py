@@ -4,14 +4,16 @@ import time
 from unitree_legged_msgs.msg import A1LowState
 from unitree_legged_msgs.msg import R_State_imuc
 import numpy as np
+import filterpy
 
 
 # The class ServoConvert is meant to convert desired angels in real world to pwm
 # commands taking into acount the srevo position direction and range
 
 # Defining the Cont class
-class Est_IMUcentric:
+class EstIMUC:
     def __init__(self):
+        Self.EKF=filterpy.kalman.ExtendedKalmanFilter(dim_x=28, dim_z=, dim_u=0)
         self._last_time_rcv = time.time()
         self._timeout_s = 60
 
@@ -24,18 +26,21 @@ class Est_IMUcentric:
         self.ros_pub_touch = rospy.Publisher("/pos_imuc", R_State_imuc, queue_size=1)
         rospy.loginfo("> Publisher to pos_imuc correctly initialized")
         self._last_time_state_rcv = time.time()
-
-        self.alpha = 0.5 # Smoothing factor for the estimate
-        self.F_force = np.array([0, 0, 0, 0]) # The Feet Force sensors estimation
-        self._F_contact = Int16MultiArray()
-        self.TH=10 #Should be determined empirically
-
-
-
+        #Setting up the Variables for the EKF
+        self.x = np.zeros((28, 1)) # The State
+        self.x_ = np.zeros((28, 1))  # The State Prior
+        self.P = np.zeros((28, 28))  # The State covariance
+        self.P_ = np.zeros((28, 28))  # The State covariance Prior
+        self.K = np.zeros((12, 28))  # Kalman Gain
 
 
 
-    def Contact_update(self, message):
+
+
+
+
+
+    def Contact_update(self, message: A1LowState):
 
         self._last_time_rcv = time.time()
         self.F_force = (1-self.alpha)*self.F_force+self.alpha*message.footForce
