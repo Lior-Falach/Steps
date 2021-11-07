@@ -17,7 +17,24 @@ class KeyboardPublisher:
         self.keyboard_publisher = rospy.Publisher('/keypress', String, queue_size=1)
 
     def publish_keypress(self, key_press):
-        self.keyboard_publisher.publish(key_press)
+
+        # Get key name
+        key = str(key_press).split('.')[-1].lower()
+
+        if key == 'up':
+            self.keyboard_publisher.publish('up')
+
+        elif key == 'down':
+            self.keyboard_publisher.publish('down')
+
+        elif key == 'right':
+            self.keyboard_publisher.publish('right')
+
+        elif key == 'left':
+            self.keyboard_publisher.publish('left')
+
+        else:
+            self.keyboard_publisher.publish('Special Key')
 
     def on_press(self, key):
         print(key)
