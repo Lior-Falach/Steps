@@ -1,67 +1,81 @@
 #!/usr/bin/env python3
 from time import time
+import numpy as np
 import rospy
+from rospy import Publisher, Rate
 from std_msgs.msg import String
 from unitree_legged_msgs.msg import A1LowState
 from a1 import A1
 
 
-def robot_movement(data, args):
-    """The function make the robot move"""
-    if data.data == 'walk':
+class A1Interface:
 
-        # Init args
-        r: A1 = args[0]
-        speed: float = 0.2  # scaled between -1 to 1
-        moving_time: int = 2  # seconds
+    def __init__(self, move_speed: float = 0.2, rate: int = 10):
 
-        # Construct the command
-        cmd = [2, speed, 0, 0, 0, 0, 0, 0]  # high command for moving the robot
+        # Init node
+        rospy.init_node('robot_state', anonymous=True)
 
-        # Log
-        rospy.loginfo(f'Executing command: {cmd}')
+        # Node's attributes
+        self._a1: A1 = A1()
+        self._rate: Rate = Rate(rate)  # hz
+        self._move_speed: float = move_speed
+        self._send_cmd: bool = False
+        self._cmd: np.array = np.array([0, 0, 0, 0, 0, 0, 0, 0])
 
-        # Execute the command
-        start = time()
-        while time() - start < moving_time:
-            r.high_command(cmd)
+        # Low state publisher
+        # todo: queue_size = ?
+        self._low_state_publisher: Publisher = Publisher('/low_state', A1LowState, queue_size=10)
 
-        # Log
-        rospy.loginfo(f'The command have been done successfully')
+        # Keyboard subscriber
+        rospy.Subscriber('keypress', String, self._update_cmd)
 
-    else:
+    def _update_cmd(self, data):
+        """ The method update the cmd attr according to the keyboard pressed button"""
 
-        rospy.loginfo('Unrecognized command')
+        # Get the key name from data
+        key = data.data.lower()
 
+        # If legal command turn on the `send_cmd` flag
+        if key in ['up', 'down', 'right', 'left']:
+            self._send_cmd = True
 
-def robot_state():
+        if key == 'up':
 
-    # Declare A1 instance
-    a1 = A1()
+            self._cmd = np.array([2, self._move_speed, 0, 0, 0, 0, 0, 0])
 
-    # Init keyboard subscriber
-    rospy.Subscriber('keypress', String, robot_movement, (a1, ))
+        elif key == 'down':
 
-    # Init publisher
-    pub = rospy.Publisher('low_state', A1LowState, queue_size=10)
+            self._cmd = np.array([2, -self._move_speed, 0, 0, 0, 0, 0, 0])
 
-    # Init node
-    rospy.init_node('robot_state', anonymous=True)
-    rate = rospy.Rate(10)  # 10hz
+        # todo: add right & left
 
-    # Start node
-    while not rospy.is_shutdown():
+        else:
 
-        # Publish the IMU state
-        # rospy.loginfo('some log message')
-        pub.publish(*a1.low_state())
+            self._cmd = np.array([0, 0, 0, 0, 0, 0, 0, 0])
 
-        # Sleep
-        rate.sleep()
+    def run(self):
+        """ Run the node """
+
+        while not rospy.is_shutdown():
+
+            # Publish the IMU state
+            self._low_state_publisher.publish(*self._a1.low_state())
+
+            # Send robot movement command
+            if self._send_cmd:
+                print(self._cmd)
+                self._a1.high_command(self._cmd)
+                self._send_cmd = False
+
+            # Sleep
+            self._rate.sleep()
 
 
 if __name__ == '__main__':
+
+    a1_interface = A1Interface()
+
     try:
-        robot_state()
+        a1_interface.run()
     except rospy.ROSInterruptException:
         pass
