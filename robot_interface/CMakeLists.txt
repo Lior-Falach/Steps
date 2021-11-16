@@ -44,13 +44,12 @@ include_directories(
 ## Install ##
 #############
 
-catkin_install_python(PROGRAMS scripts/robot_interface.py
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+catkin_install_python(PROGRAMS
+                        scripts/robot_interface.py
+                        scripts/keyboard_listener.py
+                        scripts/robot_control.py
+                       DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 
-catkin_install_python(PROGRAMS scripts/keyboard_listener.py
-  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
 
 #############
 ## Testing ##

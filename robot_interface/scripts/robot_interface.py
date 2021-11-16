@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 from time import time
 import numpy as np
 import rospy
@@ -20,7 +21,7 @@ class A1Interface:
         self._rate: Rate = Rate(rate)  # hz
         self._move_speed: float = move_speed
         self._send_cmd: bool = False
-        self._cmd: np.array = np.array([0, 0, 0, 0, 0, 0, 0, 0])
+        self._cmd: np.array = np.array([2, 0, 0, 0, 0, 0, 0, 0])
 
         # Low state publisher
         # todo: queue_size = ?
@@ -51,7 +52,7 @@ class A1Interface:
 
         else:
 
-            self._cmd = np.array([0, 0, 0, 0, 0, 0, 0, 0])
+            self._cmd = np.array([2, 0, 0, 0, 0, 0, 0, 0])
 
     def run(self):
         """ Run the node """
@@ -73,7 +74,7 @@ class A1Interface:
 
 if __name__ == '__main__':
 
-    a1_interface = A1Interface()
+    a1_interface = A1Interface(rate=10)
 
     try:
         a1_interface.run()

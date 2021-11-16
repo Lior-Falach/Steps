@@ -1,3 +1,5 @@
+from time import time
+
 from robot_interface import RobotInterface  # pytype: disable=import-error
 import numpy as np
 
@@ -13,6 +15,11 @@ class A1:
 
         # Init robot interface
         self.r = RobotInterface()
+
+        # start = time()
+        # while time() - start < 2:
+        #     self.r.send_high_command([2, -0.6, 0, 0, 0, 0, 0, 0])
+
         self.r.send_command([0] * 60)
 
     def high_command(self, cmd: np.array):
@@ -52,3 +59,4 @@ class A1:
             ddq.append(m.ddq)
 
         return q, dq, ddq, o.footForce, o.imu.quaternion, o.imu.gyroscope, o.imu.accelerometer
+
