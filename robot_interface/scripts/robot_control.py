@@ -178,8 +178,8 @@ class RobotControl:
         current_time = start_time
         states, actions = [], []
 
-        while current_time - start_time < self.max_time_secs:
-        # while (not rospy.is_shutdown()) and (current_time - start_time < self.max_time_secs):
+        # while current_time - start_time < self.max_time_secs:
+        while (not rospy.is_shutdown()) and (current_time - start_time < self.max_time_secs):
 
             start_time_robot = current_time
             start_time_wall = time.time()
@@ -209,6 +209,9 @@ class RobotControl:
             actions.append(hybrid_action)
             self.robot.Step(hybrid_action)
             current_time = self.robot.GetTimeSinceReset()
+
+            # Debug
+            print(f'Actual duration: {time.time() - start_time_wall}')
 
             if not self.use_real_robot:
                 expected_duration = current_time - start_time_robot
