@@ -13,11 +13,12 @@ import sys
 import numpy as np
 from numpy import dot, zeros, eye
 import scipy.linalg as linalg
+from imuC2012 import f_func, h_func,F_func, H_func, Q_0, R_0
 
 
 class Est(object):
 
-    def __init__(self, type: String, x_0, P_0, Q_0, R_0 ,f_func , h_func, F_func, H_func ):
+    def __init__(self, x_0, P_0,):# Q_0, R_0 ,f_func , h_func, F_func, H_func ):
         "type is a string whihc can take either 'EKF' or 'UKF'"
         "x_0 and P_0 are the initial state and state Covariance matrices numpy.array(dim_x,1) numpy.array(dim_x, dim_x)"
         "Q_0 and R_0 are rge initial Process and Measurment Covariance Noise numpy.array(dim_x, dim_x) numpy.array(dim_z, dim_z)"
@@ -37,14 +38,11 @@ class Est(object):
         self.h_func = h_func
         self.F_func = F_func
         self.H_func = H_func
-        self.K="Initialize the Kalman Gain"
-        if self.Type=='UKF'
-            self.S_point="initialize the sigma points"
+        self.K=[]#"Initialize the Kalman Gain"
 
     def predict_state(self, u):
-         "Performs the state prediction  innovation of the extended Kalman"
-        self.x_prior=self.f_func(self.x_post)
-
+         "Performs the state prediction innovation of the extended Kalman"
+        self.x_prior=self.f_func(self.x_post,u)
     def predict_cov(self):
         if self.Type=='EKF':
             F = self.F_func(self.x_post)
@@ -58,7 +56,6 @@ class Est(object):
         S=dot(H, self.P_postP).dot(H.T) + self.R
         self.K= dot(self.P_prior, H.T).dot(linalg.inv(self.S))
     def update_state(self,z):
-        if
         self.x_post=self.x_prior+dot(self.K,)
 
 
