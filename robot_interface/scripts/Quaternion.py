@@ -1,5 +1,4 @@
 "This file defines the relevent geometric models Forward & inverse Kinematics and Dynamics "
-import numpy as np
 
 # in the following
 import numpy as np

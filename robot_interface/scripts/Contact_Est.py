@@ -19,7 +19,6 @@ class Cont_est:
 
         rospy.loginfo("Setting Up the Node...")
         rospy.init_node('Contact_Est')
-
         # --- Create the Subscriber to joint_ang  topic
         self.ros_sub_state = rospy.Subscriber("/low_state", A1LowState, self.Contact_update, queue_size=1)
         rospy.loginfo("> Subscriber to low_state correctly initialized")
@@ -37,8 +36,7 @@ class Cont_est:
 
 
 
-    def Contact_update(self, message):
-
+    def Contact_update(self, message):# update the foot force estimation
         self._last_time_rcv = time.time()
         self.F_force = (1-self.alpha)*self.F_force+self.alpha*message.footForce
         self._F_contact.data = self.F_force>=self.TH
