@@ -1,0 +1,4 @@
+<launch>
+  <node name="robot_control" pkg="a1_motion_control" type="whole_body_controller_example.py" />
+  <node name="hi2low" pkg="a1_motion_control" type="hi2lowres.py" />
+</launch>
