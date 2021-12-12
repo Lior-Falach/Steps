@@ -21,6 +21,7 @@ add_message_files(
   HighState.msg
   A1LowState.msg
   A1True.msg
+  A1HighState.msg
 )
 
 generate_messages(
