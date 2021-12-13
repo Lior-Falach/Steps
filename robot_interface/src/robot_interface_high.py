@@ -2,7 +2,7 @@
 from time import time
 import rospy
 from std_msgs.msg import String
-from unitree_legged_msgs.msg import A1HighState
+from unitree_legged_msgs.msg import A1HighState, A1control
 
 from a1 import A1
 
@@ -35,21 +35,58 @@ def robot_movement(data, args):
 
         rospy.loginfo('Unrecognized command')
 
+class Robot_control():
+    def __init__(self):
+        self.a1=A1()
+        self.cmd=[0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0]
+        self.a1.high_command(self.cmd)
+        rospy.loginfo("Setting Up the Node...")
+        rospy.init_node('Robot_control')
+        self.ros_sub = rospy.Subscriber("/robot_control", A1control, self.Trag_update, queue_size=1)
+        rospy.loginfo("Subscriber robot control correctly initialized")
+        self.ros_pub_state = rospy.Publisher("/high_state", A1HighState, queue_size=1)
+        rospy.loginfo("Publisher to high state correctly initialized")
+        self.rcv_time=time()
+        self.dur_time=0
+    def Trag_update(self,message):
+        self.rcv_time=time()
+        self.dur_time=message.c[8]
+        self.cmd=message.c[0:8]
+        self.a1.high_command(self.cmd)
+
+    def run(self):
+
+        # --- Set the control rate
+        rate = rospy.Rate(100)
+
+        while not rospy.is_shutdown():
+
+            self.ros_pub_state.publish(*self.a1.high_state())
+            rospy.loginfo(self.cmd)
+            if (time()-self.rcv_time>self.dur_time):
+                self.cmd = [0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0]
+                self.a1.high_command(self.cmd)
+
+            # Sleep
+            rate.sleep()
+
 
 def robot_state():
 
     # Declare A1 instance
     a1 = A1()
 
+    cmd = [0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0]
+    a1.high_command(cmd)
     # Init keyboard subscriber
     # rospy.Subscriber('keypress', String, robot_movement, (a1, ))
 
     # Init publisher
-    pub = rospy.Publisher('high_state', A1HighState, queue_size=10)
+    pub = rospy.Publisher('high_state', A1HighState, queue_size=1)
 
     # Init node
     rospy.init_node('robot_state', anonymous=True)
-    rate = rospy.Rate(10)  # 10hz
+    rate = rospy.Rate(100)  # 10hz
 
     # Start node
     while not rospy.is_shutdown():
@@ -57,6 +94,7 @@ def robot_state():
         # Publish the IMU state
         rospy.loginfo('some log message')
         pub.publish(*a1.high_state())
+        a1.high_command(cmd)
 
         # Sleep
         rate.sleep()
@@ -64,6 +102,7 @@ def robot_state():
 
 if __name__ == '__main__':
     try:
-        robot_state()
+        RC=Robot_control()
+        RC.run()
     except rospy.ROSInterruptException:
         pass

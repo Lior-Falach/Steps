@@ -1,6 +1,21 @@
 from robot_interface import RobotInterface  # pytype: disable=import-error
 import numpy as np
+class HCMD:
+    def __init__(self):
+        self.forwardSpeed = 0.0
+        self.sideSpeed = 0.0
+        self.rotateSpeed = 0.0
+        self.bodyHeight = 0.0
 
+        self.mode = 0 # // 0: idle, default
+        # stand
+        # 1: forced
+        # stand
+        # 2: walk
+        # continuously
+        self.roll = 0
+        self.pitch = 0
+        self.yaw = 0
 
 class A1:
     """
@@ -13,9 +28,11 @@ class A1:
 
         # Init robot interface
         self.r = RobotInterface()
-        #self.r.send_command([0] * 60)
 
-    def high_command(self, cmd: np.array):
+        self.cmd=HCMD()
+        #self.r.send_command(self.cmd)
+
+    def high_command(self, cmd):
         """
         The method send high command to the robot.
         The shape of cmd need to be (8, ) where element is according to the
