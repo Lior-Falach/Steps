@@ -57,14 +57,14 @@ class Robot_control():
     def run(self):
 
         # --- Set the control rate
-        rate = rospy.Rate(100)
+        rate = rospy.Rate(200)
 
         while not rospy.is_shutdown():
 
             self.ros_pub_state.publish(*self.a1.high_state())
             rospy.loginfo(self.cmd)
             if (time()-self.rcv_time>self.dur_time):
-                self.cmd = [0.0, 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0]
+                self.cmd = [0.0, 0.0, 0.0, 0.0, 1, 0.0, -0.2, 0.0]
                 self.a1.high_command(self.cmd)
 
             # Sleep
