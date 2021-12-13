@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from time import time
+import time
 import rospy
 from std_msgs.msg import String
 from unitree_legged_msgs.msg import A1HighState, A1control
@@ -46,10 +46,10 @@ class Robot_control():
         rospy.loginfo("Subscriber robot control correctly initialized")
         self.ros_pub_state = rospy.Publisher("/high_state", A1HighState, queue_size=1)
         rospy.loginfo("Publisher to high state correctly initialized")
-        self.rcv_time=time()
+        self.rcv_time=time.time()
         self.dur_time=0
     def Trag_update(self,message):
-        self.rcv_time=time()
+        self.rcv_time=time.time()
         self.dur_time=message.c[8]
         self.cmd=message.c[0:8]
         self.a1.high_command(self.cmd)
@@ -63,9 +63,9 @@ class Robot_control():
 
             self.ros_pub_state.publish(*self.a1.high_state())
             rospy.loginfo(self.cmd)
-            if (time()-self.rcv_time>self.dur_time):
-                self.cmd = [0.0, 0.0, 0.0, 0.0, 1, 0.0, -0.2, 0.0]
-                self.a1.high_command(self.cmd)
+            if (time.time()-self.rcv_time>self.dur_time):
+                self.cmd = [0.0, 0.0, 0.0, 0, 0, 0.0, 0.0, 0.0]
+            self.a1.high_command(self.cmd)
 
             # Sleep
             rate.sleep()
