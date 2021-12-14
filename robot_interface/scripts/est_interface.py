@@ -89,6 +89,10 @@ class Est(object):
         #Initializing the measurments
         self.IMU_a = np.array([0, 0, 0])
         self.IMU_g = np.array([0, 0, 0])
+        self.Foot_force=np.array([0,0,0,0])
+        self.Contact=np.array([0,0,0,0])
+        self.TH=15 #Foot force threshold
+
 
         self.Q=Q_0
         self.R=R_0
@@ -111,6 +115,7 @@ class Est(object):
         self.IMU_a=message.accel
         self.IMU_g=message.gyro
         self.predict_state()
+        self.Foot_force_update(messag.footForce)
 
 
     def predict_state(self):
@@ -125,6 +130,11 @@ class Est(object):
         self.x.plr.pri = self.x.plr.pos
         F=F_func(dt,self.IMU_a-self.x.bf.pos,C,self.IMU_g-self.x.bw.pos)
         self.P.pri=np.matmul(np.matmul(F.transpose(),self.P.pos),F)+self.Q
+
+    def Foot_force_update(self,FF):
+        self.Foot_force=self.alpha*self.Foot_force+(1-self.alpha)*FF
+        self.Contact=self.Foot_force>=self.TH
+
 
     def predict_cov(self):
         if self.Type=='EKF':
