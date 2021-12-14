@@ -14,8 +14,11 @@ import numpy as np
 from numpy import dot, zeros, eye
 import scipy.linalg as linalg
 from imuC2012 import f_func, h_func,F_func, H_func, Q_0, R_0
-from unitree_legged_msgs.msg import A1LowState
+from unitree_legged_msgs.msg import A1HighState
 from unitree_legged_msgs.msg import A1True
+from q_functions import q_mult, w2zq, q2R
+dt=1/200.0
+gravity=np.array([0, 0, -9.8])
 
 class Est(object):
 
@@ -32,16 +35,61 @@ class Est(object):
         rospy.loginfo("Setting Up the Node...")
         rospy.init_node('imuCentrocLocalization_Est')
         # --- Create the Subscriber to the low state lo res  topic
-        self.ros_sub_state = rospy.Subscriber("/low_state_Lo_res", A1LowState, self.Contact_update, queue_size=1)
+        self.ros_sub_state = rospy.Subscriber("/low_state_Lo_res", A1HighState, self.State_update, queue_size=1)
         rospy.loginfo("> Subscriber to low_state Low res correctly initialized")
         self.ros_pub_state = rospy.Publisher("/imuC12", A1True, queue_size=1)
         rospy.loginfo("> Publisher to imuC12 correctly initialized")
         self._last_time_state_rcv = time.time()
 
-        self.x_post=x_0
-        self.x_prior=x_0
-        self.P_post=P_0
-        self.P_prior=P_0
+        # Initialing  the state variables
+        self.x.r.pri = np.array(x_0[0:3])
+        self.x.r.pos = np.array(x_0[0:3])
+
+        self.x.v.pri = np.array(x_0[3:6])
+        self.x.v.pos = np.array(x_0[3:6])
+
+        self.x.q.pri = np.array(x_0[6:10])
+        self.x.q.pos = np.array(x_0[6:10])
+
+        self.x.prf.pri = np.array(x_0[10:13])
+        self.x.prf.pos = np.array(x_0[10:13])
+
+        self.x.plf.pri = np.array(x_0[13:16])
+        self.x.plf.pos = np.array(x_0[13:16])
+
+        self.x.prr.pri = np.array(x_0[16:19])
+        self.x.prr.pos = np.array(x_0[16:19])
+
+        self.x.plr.pri = np.array(x_0[19:22])
+        self.x.plr.pos = np.array(x_0[19:22])
+
+        self.x.bf.pri = np.array(x_0[22:25])
+        self.x.bf.pos = np.array(x_0[22:25])
+
+        self.x.bw.pri = np.array(x_0[25:28])
+        self.x.bw.pos = np.array(x_0[25:28])
+
+        # Initialiizing the error state variables
+
+        self.dx.r = np.array([0, 0, 0])
+        self.dx.v = np.array([0, 0, 0])
+        self.dx.q = np.array([0, 0, 0])
+        self.dx.prf = np.array([0, 0, 0])
+        self.dx.plf = np.array([0, 0, 0])
+        self.dx.prr = np.array([0, 0, 0])
+        self.dx.plr = np.array([0, 0, 0])
+        self.dx.bf = np.array([0, 0, 0])
+        self.dx.bw = np.array([0, 0, 0])
+
+        #Initializing the Covariance elements
+
+        self.P.pri = np.array(P_0)
+        self.P.pos = np.array(P_0)
+
+        #Initializing the measurments
+        self.IMU_a = np.array([0, 0, 0])
+        self.IMU_g = np.array([0, 0, 0])
+
         self.Q=Q_0
         self.R=R_0
         self.f_func=f_func
@@ -60,13 +108,24 @@ class Est(object):
     def update_measurment(self,message):
 
     def state_update(self,message):
-        self.IMU_a=message.accelerometer
-        self.IMU_g=message.gyroscope
+        self.IMU_a=message.accel
+        self.IMU_g=message.gyro
+        self.predict_state()
 
 
-    def predict_state(self, u):
-         "Performs the state prediction innovation of the extended Kalman"
-        self.x_prior=self.f_func(self.x_post,u)
+    def predict_state(self):
+        "Performs the state prediction of the extended Kalman"
+        C=np.array(q2R(self.x.q.pos))
+        self.x.r.pri = self.x.r.pos + dt * self.x.v.pos + 0.5 * dt * dt * (np.matmul(C.transpose(), self.IMU_a - self.x.bf.pos) + gravity)
+        self.x.v.pri = self.v.pos + dt * (np.matmul(C, self.IMU_a - self.x.bf.pos) + gravity)
+        self.x.q.pri = q_mult(w2zq(dt* (self.IMU_g-self.x.bw.pos)),self.x.q.pos)
+        self.x.prf.pri = self.x.prf.pos
+        self.x.plf.pri = self.x.plf.pos
+        self.x.prr.pri = self.x.prr.pos
+        self.x.plr.pri = self.x.plr.pos
+        F=F_func(dt,self.IMU_a-self.x.bf.pos,C,self.IMU_g-self.x.bw.pos)
+        self.P.pri=np.matmul(np.matmul(F.transpose(),self.P.pos),F)+self.Q
+
     def predict_cov(self):
         if self.Type=='EKF':
             F = self.F_func(self.x_post)

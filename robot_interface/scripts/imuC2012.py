@@ -1,31 +1,22 @@
 # This file contains the basic functions needed for the imuC2012 consistent leg odomotry
 
 import numpy as np
-from q_functions import w2zq, q_mult
+from q_functions import w2zq, q_mult,skew_m
 g=np.array([0,0,9.8])
 
 P_0=
 
 
-def f_func(x,dt,C,f,w):
-    g=[0,0,-9.8]
-    r=x[0:3]
-    v=x[3:6]
-    q=x[6:10]
-    p1 = x[10:13]
-    p2 = x[13:16]
-    p3 = x[16:19]
-    p4 = x[19:22]
-    bf = x[22:25]
-    bw = x[25:28]
-    r_pri=r+dt*v+0.5*dt*dt*(np.matmul(C,f-bf)+g)
-    v_pri=v+dt*(np.matmul(C,f-bf)+g)
-    q_pri=q_mult(w2zq(dt*(w-bw)),q)
+def F_func(dt,f,C,w):
+    f_cross=skew_m(f)
+    G0,G1,G2,G3=Gamma_func(dt,w)
+    F=np.array([[np.eye(3)      , dt*np.eye(3)   ,  -0.5*dt*dt*np.matmul(C,f_cross), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -0.5*dt*dt*C   , np.zeros([3,3])],  #dr
+                [np.zeros([3,3]), np.eye(3)      ,   -dt*np.matmul(C,f_cross)      , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), dt*C           , np.zeros([3,3])],  #dv
+                [np.zeros([3,3]), np.zeros([3,3]),   G0                            , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), G1             ],  #dq
+                [np.zeros([18,9]), np.eye(18)])
 
-    return np.array([r_pri,v_pri,q_pri,p1,p2,p3,p4,bf,bw])
+    return F
 
-
-    return
 
 def h_func():
 
