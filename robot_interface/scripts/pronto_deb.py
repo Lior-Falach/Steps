@@ -1,29 +1,23 @@
-#!/usr/bin/env python3
-
-import rospy
 import numpy as np
 from numpy import linalg as LA, ndarray
 import math
 from pyquaternion import Quaternion
 import random
 import matplotlib.pyplot as plt
-import timeit
-from unitree_legged_msgs.msg import A1LowState
 
-f = 100  # Hz
-dt = 1 / f
+dt = 0.002
 I_3 = np.eye(3, dtype=float)
+process_noise_v_k_minus_1 = np.random.normal(0, 1, size=(1, 3))*0.001
 
 # State model noise covariance matrix Q_k
-Q = np.random.normal(0, 1, size=(6, 6)) * 0.001
+Q = np.random.normal(0, 1, size=(6, 6))*0.001
 
 # Measurement matrix H_k
 H = np.zeros((3, 15))
-H[:, 6:9] = I_3  # V_mes
+H[:, 6:9] = I_3
 
-# FOR FIRST ITERATION
-state_estimate_k_minus = np.zeros((15, 1))
-covariance_estimate_k_minus = np.random.normal(0, 1, size=(15, 15)) * 0.001
+# Sensor noise
+sensor_noise_w_k = np.random.normal(0, 1, size=(1, 3))*0.001
 
 # a1 const
 """
@@ -58,7 +52,7 @@ RL_2 = 11
 
 Leg_offset_x = 0.1805  # robot x length(length) 0.1805*2
 Leg_offset_y = 0.047  # robot y length(width) 0.047*2
-Trunk_offset_z = 0.01675  # robot z length(height)
+Trunk_offset_z = 0.01675  # robot z length(hight)
 Shoulder_width = 0.0838  # from Hip servo to Thigh servo
 Upper_leg_length = 0.2  # from Thigh to Calf
 Lower_leg_length = 0.2  # from Calf to Foot
@@ -116,7 +110,7 @@ def shoulder_2_base(pos_in_shoulder):
                                     [0.0, 0.0, 0.0, 1.0]])
         foot_pos = pos_in_shoulder[:, foot_num]
         foot_pos = np.append(foot_pos, [1.0])
-        pos_in_base[foot_num, :] = (T_shoulder_base @ foot_pos)[0:3]
+        pos_in_base[foot_num, :] = np.matmul(T_shoulder_base, foot_pos)[0:3]
     return pos_in_base
 
 
@@ -138,8 +132,8 @@ def fk_Jacobian(leg_ang):  # Jacobian of forward kinematics
     return Jacobian
 
 
-def ekf(z_k_observation_vector, state_estimate_k_, P_k_v, A_k, W_k):
-    global covariance_estimate_k_minus, state_estimate_k_minus
+def ekf(z_k_observation_vector, state_estimate_k,
+        covariance_estimate_k_minus_1, P_k_v, A_k_minus_1, W_k_minus_1):
     """
     Extended Kalman Filter. Fuses noisy sensor measurement to
     create an optimal estimate of the state of the robotic system.
@@ -147,41 +141,40 @@ def ekf(z_k_observation_vector, state_estimate_k_, P_k_v, A_k, W_k):
         return state_estimate_k near-optimal state estimate at time k
     """
 
-    # Predict #
+    ######################### Predict #############################
     # Predict the state estimate at time k based on the state
     # estimate at time k-1 and the control input applied at time k-1.
 
-    # print("State Estimate Before EKF=", state_estimate_k)
+    print("State Estimate Before EKF=", state_estimate_k)
 
     # Predict the state covariance estimate based on the previous
     # covariance and some noise
-    covariance_estimate_k_ = A_k @ covariance_estimate_k_minus.T @ A_k.T + W_k @ Q @ W_k.T
+    covariance_estimate_k = A_k_minus_1 @ covariance_estimate_k_minus_1.T @ A_k_minus_1.T + W_k_minus_1 @ Q @ W_k_minus_1.T
 
-    # Update (Correct) #
+    ################### Update (Correct) ##########################
     # Calculate the difference between the actual sensor measurements
     # at time k minus what the measurement model predicted
-    # the sensor measurements would be for the current time step k.
-    measurement_residual_y_k = z_k_observation_vector.T - (H @ state_estimate_k_)
+    # the sensor measurements would be for the current timestep k.
+    measurement_residual_y_k = z_k_observation_vector.T - (H @ state_estimate_k)
 
-    # print("Observation=", z_k_observation_vector)
+    print("Observation=", z_k_observation_vector)
 
     # Calculate the measurement residual covariance
-    S_k = H @ covariance_estimate_k_ @ H.T + P_k_v
+    S_k = H @ covariance_estimate_k @ H.T + P_k_v
 
     # Calculate the near-optimal Kalman gain
     # We use pseudocode since some matrices might be
     # non-square or singular.
-    K_k = covariance_estimate_k_ @ H.T @ np.linalg.pinv(S_k)
+    K_k = covariance_estimate_k @ H.T @ np.linalg.pinv(S_k)
 
     # Calculate an updated state estimate for time k
-    state_estimate_k = state_estimate_k_ + (K_k @ measurement_residual_y_k)
-    state_estimate_k_minus = state_estimate_k
+    state_estimate_k = state_estimate_k + (K_k @ measurement_residual_y_k)
 
     # Update the state covariance estimate for time k
-    covariance_estimate_k = covariance_estimate_k_ - (K_k @ H @ covariance_estimate_k_)
-    covariance_estimate_k_minus = covariance_estimate_k
+    covariance_estimate_k = covariance_estimate_k - (K_k @ H @ covariance_estimate_k)
+
     # Print the best (near-optimal) estimate of the current state of the robot
-    # print("State Estimate After EKF=", state_estimate_k)
+    print("State Estimate After EKF=", state_estimate_k)
 
     # Return the updated state and covariance estimates
     return state_estimate_k, covariance_estimate_k
@@ -219,114 +212,90 @@ def euler_from_quaternion(quaternion):
     return np.array([[roll_x, pitch_y, yaw_z]])  # in radians
 
 
-def get_quaternion_from_euler(roll, pitch, yaw):
-    """
-    Convert an Euler angle to a quaternion.
-
-    Input
-      :param roll: The roll (rotation around x-axis) angle in radians.
-      :param pitch: The pitch (rotation around y-axis) angle in radians.
-      :param yaw: The yaw (rotation around z-axis) angle in radians.
-
-    Output
-      :return qx, qy, qz, qw: The orientation in quaternion [x,y,z,w] format
-    """
-    qx = np.sin(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) - np.cos(roll / 2) * np.sin(pitch / 2) * np.sin(yaw / 2)
-    qy = np.cos(roll / 2) * np.sin(pitch / 2) * np.cos(yaw / 2) + np.sin(roll / 2) * np.cos(pitch / 2) * np.sin(yaw / 2)
-    qz = np.cos(roll / 2) * np.cos(pitch / 2) * np.sin(yaw / 2) - np.sin(roll / 2) * np.sin(pitch / 2) * np.cos(yaw / 2)
-    qw = np.cos(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) + np.sin(roll / 2) * np.sin(pitch / 2) * np.sin(yaw / 2)
-
-    return Quaternion(qx, qy, qz, qw)
-
-
-def pronto(LowState):
-    global state_estimate_k_minus, covariance_estimate_k_minus
-    # const
-
+def read_sensor(LowState, state_estimate_k_minus_1, covariance_estimate_k_minus_1):
+    z_k = np.array([[0.0, 0.0, 0.0]])
+    b_a = np.array([[0.0, 0.0, 0.0]])  # acc noise
+    b_w = np.array([[0.0, 0.0, 0.0]])  # omega noise
     b_q = Quaternion()  # q noise
     collect_v_noise = np.array([[0.0, 0.0, 0.0]])
     g = np.array([[0.0, 0.0, -9.81]])
+    r = np.array([[0.0, 0.0, 0.0]])
+    v = np.array([[0.0, 0.0, 0.0]])
+    q_k = Quaternion()  # unit initial quaternion (q_0)
+    rotation_matrix = np.zeros((3, 3))
+    euler_rotation = np.array([[0.0, 0.0, 0.0]])  # euler for state
+
     servo_Angle_mes = np.zeros((4, 3))
     angular_velocity_mes = np.zeros((4, 3))
+
+    state_estimate_k = state_estimate_k_minus_1
+
+    STEP_factor = 0.8
+    F_Z_stepping = A1_mass/4*STEP_factor  # my guess for trash hold F=mg/4*factor
+    allStep = 0
+    Foot_Force_mes = np.array([0.0, 0.0, 0.0, 0.0])
+    isStep = np.array([0.0, 0.0, 0.0, 0.0])  # boll vector that show if each leg is stepping
     v_from_leg_k = np.zeros((4, 3))
     v_leg_odometry = np.array([0.0, 0.0, 0.0])
 
-    # read last step
-
-    r_minus = state_estimate_k_minus[0:3].T
-    euler_rotation = state_estimate_k_minus[3:6]
-    roll, pitch, yaw = euler_rotation
-    q_k_minus = get_quaternion_from_euler(roll, pitch, yaw)
-    v_minus = state_estimate_k_minus[6:9].T
-    b_a_minus = state_estimate_k_minus[9:12].T  # acc noise
-    b_w_minus = state_estimate_k_minus[12:15].T  # omega noise
-
-    state_estimate_k_ = state_estimate_k_minus
     # read low state massage
     # Measurement
-    imu_acc = np.array(LowState.accelerometer)
-    print('imu_acc', imu_acc)
-    imu_omega = np.array(LowState.gyroscope)
-    print('imu_omega', imu_omega)
-    # q_mes = np.array(LowState.quaternion)
-    # imu_quaternion = Quaternion(q_mes)
+    imu_acc = LowState.imu.accelerometer
+    imu_omega = LowState.imu.gyroscope
+    q_mes = LowState.imu.quaternion
+    imu_quaternion = Quaternion(q_mes[0])
 
-    Hip_angle = np.array([LowState.q[FR_0], LowState.q[FL_0], LowState.q[RR_0],
-                          LowState.q[RL_0]])
-    Thigh_angle = np.array([LowState.q[FR_1], LowState.q[FL_1], LowState.q[RR_1],
-                            LowState.q[RL_1]])
-    Calf_angle = np.array([LowState.q[FR_2], LowState.q[FL_2], LowState.q[RR_2],
-                           LowState.q[RL_2]])
+    Hip_angle = np.array([LowState.motorState[FR_0].q, LowState.motorState[FL_0].q, LowState.motorState[RR_0].q,
+                          LowState.motorState[RL_0].q])
+    Thigh_angle = np.array([LowState.motorState[FR_1].q, LowState.motorState[FL_1].q, LowState.motorState[RR_1].q,
+                            LowState.motorState[RL_1].q])
+    Calf_angle = np.array([LowState.motorState[FR_2].q, LowState.motorState[FL_2].q, LowState.motorState[RR_2].q,
+                           LowState.motorState[RL_2].q])
 
     Hip_Angular_velocity = np.array(
-        [LowState.dq[FR_0], LowState.dq[FL_0], LowState.dq[RR_0],
-         LowState.dq[RL_0]])
+        [LowState.motorState[FR_0].dq, LowState.motorState[FL_0].dq, LowState.motorState[RR_0].dq,
+         LowState.motorState[RL_0].dq])
     Thigh_Angular_velocity = np.array(
-        [LowState.dq[FR_1], LowState.dq[FL_1], LowState.dq[RR_1],
-         LowState.dq[RL_1]])
+        [LowState.motorState[FR_1].dq, LowState.motorState[FL_1].dq, LowState.motorState[RR_1].dq,
+         LowState.motorState[RL_1].dq])
     Calf_Angular_velocity = np.array(
-        [LowState.dq[FR_2], LowState.dq[FL_2], LowState.dq[RR_2],
-         LowState.dq[RL_2]])
+        [LowState.motorState[FR_2].dq, LowState.motorState[FL_2].dq, LowState.motorState[RR_2].dq,
+         LowState.motorState[RL_2].dq])
 
     for i in range(4):  # 4 legs
-        servo_Angle_mes[i, :] = ([Hip_angle[i], Thigh_angle[i], Calf_angle[i]])
-        angular_velocity_mes[i, :] = (
-            [Hip_Angular_velocity[i], Thigh_Angular_velocity[i], Calf_Angular_velocity[i]])
+        for j in range(3):  # 3 arms
+            servo_Angle_mes[i, :] = ([Hip_angle[i], Thigh_angle[i], Calf_angle[i]])
+            angular_velocity_mes[i, :] = (
+                [Hip_Angular_velocity[i], Thigh_Angular_velocity[i], Calf_Angular_velocity[i]])
 
-    isStep = np.array(LowState.footForce)  # which leg is stepping
+    FootForce_k_minus_1 = Foot_Force_mes
+    Foot_Force_mes = LowState.footForce
+    isStep = Foot_Force_mes >= F_Z_stepping  # which leg is stepping
     num_of_step_leg = sum(isStep)  # number of leg that stepping
 
-    # Update state
+    # Update
     Pos_in_shoulder = forward_kinematics(servo_Angle_mes)
+    print("Pos_in_shoulder:", Pos_in_shoulder)
     Pos_in_base = shoulder_2_base(Pos_in_shoulder)
-    # print("Pos_in_base:", Pos_in_base)
+    print("Pos_in_base:", Pos_in_base)
 
-    acc_body = imu_acc - b_a_minus  # In body frame
-    omega = imu_omega - b_w_minus
+    imu_quaternion = imu_quaternion - b_q
+    acc_body = imu_acc - b_a  # In body frame
+    omega = imu_omega - b_w
 
-    rotation_angle = dt * LA.norm(omega)
-    print(rotation_angle)
-    rotation_axis = omega / LA.norm(omega)
-    print(rotation_axis)
+    rotation_angle = dt * LA.norm(omega[0])
+    rotation_axis = omega[0] / LA.norm(omega[0])
     # quaternion update
     # Rotate in rotation_angle about rotation_axis, when rotation_angle is in radians
-    q_update = Quaternion(axis=rotation_axis[0], angle=rotation_angle)
-    print(q_update)
-    q_k = q_update * q_k_minus
-    print(q_k)
-    print(acc_body)
+    q_update = Quaternion(axis=rotation_axis, angle=rotation_angle)
+    q_k = q_update * q_k
     acc_world = q_k.rotate(acc_body[0])
-    print('LowState.accelerometer:', LowState.accelerometer)
-    print('b_a_minus:', b_a_minus)
-    print('acc_body:', acc_body)
-    print('acc_world:', acc_world)
+
     rotation_matrix = q_k.rotation_matrix  # quaternion to rotation_matrix of base to world
     euler_rotation = euler_from_quaternion(q_k)
-    v = v_minus + dt * (acc_world + g)
-    r = r_minus + dt * v_minus + math.pow(dt, 2) / 2 * (acc_world + g)
-    print('r=', r)
-    b_a = b_a_minus
-    b_w = b_w_minus
+    # acc_world=rotation_matrix@acc_body
+    v = v + dt * (acc_world + g)
+    r = r + dt * v + math.pow(dt, 2) / 2 * (acc_world + g)
 
     # The estimated state vector at time k-1
     # x=[p,R,v,b_a,b_w]
@@ -343,7 +312,6 @@ def pronto(LowState):
     d_b_a_dot_dx = np.zeros((3, 15))
     d_b_w_dot_dx = np.zeros((3, 15))
     A_c = np.concatenate((d_p_dot_dx, d_rotation_matrix_dot_dx, d_v_dot_dx, d_b_a_dot_dx, d_b_w_dot_dx), axis=0)
-    print('A_c=',A_c)
 
     # Calculate W_c matrix
     d_p_dot_du = np.concatenate((zero_mat, zero_mat), axis=1)
@@ -352,12 +320,11 @@ def pronto(LowState):
     d_b_a_dot_du = np.zeros((3, 6))
     d_b_w_dot_du = np.zeros((3, 6))
     W_c = np.concatenate((d_p_dot_du, d_rotation_matrix_dot_du, d_v_dot_du, d_b_a_dot_du, d_b_w_dot_du), axis=0)
-    print('W_c=', W_c)
 
     # Calculate state
-    state_estimate_k_ = state_estimate_k_ + f_c * dt
-    A_k = np.eye(15, dtype=float) + A_c * dt
-    W_k = W_c * dt
+    state_estimate_k = state_estimate_k + f_c * dt
+    A_k_minus_1 = np.eye(15, dtype=float) + A_c * dt
+    W_k_minus_1 = W_c * dt
 
     # EKF
     # Create a list of sensor observations
@@ -371,21 +338,38 @@ def pronto(LowState):
         z_k = v_leg_odometry  # from leg odematry
     else:
         v_leg_odometry = np.zeros((1, 4))
-        z_k = v
 
     # covariance for the velocity measurement P_k calculate
-    delta_v = v_leg_odometry - v_from_leg_k[isStep == 1, :]
-    D_k = 1 / num_of_step_leg * (delta_v.T @ delta_v)
-    delta_force = 0
+    delta_v = v_leg_odometry - v_from_leg_k[isStep]
+
+    D_k = 1 / num_of_step_leg * (delta_v.T@delta_v)
+    delta_force = 1 / num_of_step_leg * sum(abs(Foot_Force_mes - FootForce_k_minus_1))
     alpha = 1  # guess
     P_0_v = np.zeros((3, 3))  # my guess
     P_k_v = P_0_v + np.power((0.5 * D_k + I_3 * delta_force / alpha), 2)
 
+    # # Calculate error dynamics matrix
+    # quaternion_derivative = rotation_matrix.T @ skew_symmetric_matrix(acc_body)
+    # gamma_0 = expm(dt * skew_symmetric_matrix(omega))
+    # print(gamma_0)
+    # gamma_0 = gamma(dt * skew_symmetric_matrix(omega))
+    # print(gamma_0)
+    # gamma_1 = gamma_0  # not true you need to fix it
+    #
+    # F_k = np.array( [[I_3, dt * I_3, -math.pow(dt, 2) / 2.0 * quaternion_derivative, -math.pow(dt, 2) / 2.0 *
+    # rotation_matrix.T, 0.0], [0, I_3, -dt * quaternion_derivative, -dt * rotation_matrix.T, 0.0], [0.0, 0.0,
+    # gamma_0.T, 0.0, -gamma_1], [0.0, 0.0, 0.0, I_3, 0.0], [0.0, 0.0, 0.0, 0.0, I_3]])
+    #
+    # print("F_k:", F_k)
+    # Q_k = 2
+    # W_k = 3
+    # print("Time step k=", k)
+
     #  Run the Extended Kalman Filter
     optimal_state_estimate_k, covariance_estimate_k = ekf(
         z_k,  # Most recent sensor measurement
-        state_estimate_k_,  # Our most recent estimate of the state
-        P_k_v, A_k, W_k)  # Our most recent state covariance matrix)
+        state_estimate_k,  # Our most recent estimate of the state
+        covariance_estimate_k_minus_1, P_k_v, A_k_minus_1, W_k_minus_1)  # Our most recent state covariance matrix)
 
     # # Print a blank line
     # print()
@@ -418,19 +402,63 @@ def pronto(LowState):
     return optimal_state_estimate_k, covariance_estimate_k
 
 
-def pronto_mes(A1LowState):
+class Imu:
+    def __init__(self):
+        self.accelerometer = np.random.rand(1, 3)*9.81
+        self.gyroscope = np.random.rand(1, 3)
+        self.quaternion = Quaternion.random()
 
-    optimal_state_estimate_k, covariance_estimate_k = pronto(A1LowState)
-    print(optimal_state_estimate_k)
+    def __repr__(self):
+        return "accelerometer:% s gyroscope:% s quaternion:% s" % (self.accelerometer, self.gyroscope,
+                                                                   self.quaternion)
 
 
-def listener():
-    rospy.init_node('pronto', anonymous=True)
+class MotorState:
+    def __init__(self):
+        self.q = random.uniform(0.0, 1.0)
+        self.dq = random.uniform(0.0, 1.0)
 
-    rospy.Subscriber("low_state_Lo_res", A1LowState, pronto_mes)
+    def __repr__(self):
+        return "q:% s dq:% s" % (self.q, self.dq)
 
-    rospy.spin()
+
+class LowState:
+    def __init__(self):
+        self.imu = Imu()
+        motorState = []
+        for i in range(20):
+            motorState.append(MotorState())
+        self.motorState = motorState
+        self.footForce = np.random.randint(2, size=4)*A1_mass/4
+        is_all_zero = np.all((self.footForce == 0))
+        if is_all_zero:
+            self.footForce = self.footForce + A1_mass/4
+
+    def __repr__(self):
+        return "imu:% s motorState:% s footForce:% s" % (self.imu, self.motorState, self.footForce)
 
 
 if __name__ == '__main__':
-    listener()
+    dt = 0.02
+    time = 0
+    x = []
+    y = []
+    # FOR FIRST ITERATION
+    state_estimate_k_minus_1 = np.zeros((15, 1))
+    covariance_estimate_k_minus_1 = np.random.normal(0, 1, size=(15, 15)) * 0.001
+    while time < 1:
+        lowState = LowState()  # read sensors
+        optimal_state_estimate_k, covariance_estimate_k = read_sensor(lowState, state_estimate_k_minus_1, covariance_estimate_k_minus_1)
+        x.append(optimal_state_estimate_k[0][0])
+        y.append(optimal_state_estimate_k[1][0])
+        print()
+        print()
+        print("time:", time)
+        print('optimal_state_estimate_k: ', optimal_state_estimate_k)
+        print('covariance_estimate_k: ', covariance_estimate_k)
+        state_estimate_k_minus_1 = optimal_state_estimate_k
+        covariance_estimate_k_minus_1 = covariance_estimate_k
+        time = time + dt
+    t = np.arange(0., time-dt, dt)
+    plt.plot([x], [y], 'bo')
+    plt.show()
