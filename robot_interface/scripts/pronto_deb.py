@@ -458,19 +458,6 @@ def rosbag_2_array(path):
     return data
 
 
-def update_lines(i, FR, FL, RR, RL):
-    line1 = art3d.Line3D([FR[i, 0] + com[i, 0], com[i, 0]], [FR[i, 1] + com[i, 1], com[i, 1]],
-                         [FR[i, 2] + com[i, 2], com[i, 2]], color='c')
-    line2 = art3d.Line3D([FL[i, 0] + com[i, 0], com[i, 0]], [FL[i, 1] + com[i, 1], com[i, 1]],
-                         [FL[i, 2] + com[i, 2], com[i, 2]], color='r')
-    line3 = art3d.Line3D([RR[i, 0] + com[i, 0], com[i, 0]], [RR[i, 1] + com[i, 1], com[i, 1]],
-                         [RR[i, 2] + com[i, 2], com[i, 2]], color='b')
-    line4 = art3d.Line3D([RL[i, 0] + com[i, 0], com[i, 0]], [RL[i, 1] + com[i, 1], com[i, 1]],
-                         [RL[i, 2] + com[i, 2], com[i, 2]], color='g')
-    lines = [line1, line2, line3, line4]
-    return line1, line2, line3, line4
-
-
 if __name__ == '__main__':
     time = 0
     x = []

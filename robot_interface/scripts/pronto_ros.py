@@ -9,6 +9,7 @@ import random
 import matplotlib.pyplot as plt
 import timeit
 from unitree_legged_msgs.msg import A1LowState
+from io import StringIO
 
 f = 100  # Hz
 dt = 1 / f

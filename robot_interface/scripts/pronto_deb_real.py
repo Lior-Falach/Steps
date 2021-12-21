@@ -6,14 +6,11 @@ import random
 import matplotlib.pyplot as plt
 from io import StringIO
 
-from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
-import matplotlib.animation as animation
-from matplotlib.animation import FuncAnimation
 import mpl_toolkits.mplot3d.axes3d as p3
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-f = 100
+f = 200
 dt = 1 / f
 I_3 = np.eye(3, dtype=float)
 
@@ -236,15 +233,14 @@ def get_quaternion_from_euler(roll, pitch, yaw):
     return Quaternion(qx, qy, qz, qw)
 
 
-def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
+def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, FootForce_k_minus):
     b_q = Quaternion()  # q noise
     collect_v_noise = np.array([[0.0, 0.0, 0.0]])
-    g = np.array([[0.0, 0.0, -9.81]])
-    servo_Angle_mes = np.zeros((4, 3))
-    angular_velocity_mes = np.zeros((4, 3))
-    v_from_leg_k = np.zeros((4, 3))
     v_leg_odometry = np.array([0.0, 0.0, 0.0])
-
+    v_from_leg_k = np.zeros((4, 3))
+    STEP_factor = 0.8
+    F_Z_stepping = A1_mass / 4 * STEP_factor  # my guess for trash hold F=mg/4*factor
+    g = np.array([[0.0, 0.0, 9.81]])
     # read last step
 
     r_minus = state_estimate_k_minus[0:3].T
@@ -258,40 +254,16 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
     state_estimate_k_ = state_estimate_k_minus
     # read low state massage
     # Measurement
-    imu_acc = np.array(LowState.imu.accelerometer)
+    imu_acc = np.array(LowState.imu.accelerometer) - g
     imu_omega = np.array(LowState.imu.gyroscope)
-    # q_mes = np.array(LowState.quaternion)
-    # imu_quaternion = Quaternion(q_mes)
+    v_from_leg_k[FR], v_from_leg_k[FL], v_from_leg_k[RR], v_from_leg_k[RL] = \
+        LowState.Legs_V.FR, LowState.Legs_V.FL, LowState.Legs_V.RR, LowState.Legs_V.RL
 
-    Hip_angle = np.array([LowState.motorState[FR_0].q, LowState.motorState[FL_0].q, LowState.motorState[RR_0].q,
-                          LowState.motorState[RL_0].q])
-    Thigh_angle = np.array([LowState.motorState[FR_1].q, LowState.motorState[FL_1].q, LowState.motorState[RR_1].q,
-                            LowState.motorState[RL_1].q])
-    Calf_angle = np.array([LowState.motorState[FR_2].q, LowState.motorState[FL_2].q, LowState.motorState[RR_2].q,
-                           LowState.motorState[RL_2].q])
-
-    Hip_Angular_velocity = np.array(
-        [LowState.motorState[FR_0].dq, LowState.motorState[FL_0].dq, LowState.motorState[RR_0].dq,
-         LowState.motorState[RL_0].dq])
-    Thigh_Angular_velocity = np.array(
-        [LowState.motorState[FR_1].dq, LowState.motorState[FL_1].dq, LowState.motorState[RR_1].dq,
-         LowState.motorState[RL_1].dq])
-    Calf_Angular_velocity = np.array(
-        [LowState.motorState[FR_2].dq, LowState.motorState[FL_2].dq, LowState.motorState[RR_2].dq,
-         LowState.motorState[RL_2].dq])
-
-    for leg in range(4):  # 4 legs
-        servo_Angle_mes[leg, :] = ([Hip_angle[leg], Thigh_angle[leg], Calf_angle[leg]])
-        angular_velocity_mes[leg, :] = (
-            [Hip_Angular_velocity[leg], Thigh_Angular_velocity[leg], Calf_Angular_velocity[leg]])
-
-    isStep = np.array(LowState.footForce)  # which leg is stepping
+    Foot_Force_mes = LowState.footForce
+    isStep = Foot_Force_mes >= F_Z_stepping  # which leg is stepping
     num_of_step_leg = sum(isStep)  # number of leg that stepping
 
     # Update state
-    Pos_in_shoulder = forward_kinematics(servo_Angle_mes)
-    Pos_in_base = shoulder_2_base(Pos_in_shoulder)
-    # print("Pos_in_base:", Pos_in_base)
     acc_body = imu_acc - b_a_minus  # In body frame
     omega = imu_omega - b_w_minus
 
@@ -304,7 +276,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
     acc_world = q_k.rotate(acc_body[0])
     rotation_matrix = q_k.rotation_matrix  # quaternion to rotation_matrix of base to world
     euler_rotation = euler_from_quaternion(q_k)
-    v = v_minus + dt * (acc_world + g)
+    v = v_minus + dt * acc_world
     r = r_minus + dt * v_minus + math.pow(dt, 2) / 2 * (acc_world + g)
     b_a = b_a_minus
     b_w = b_w_minus
@@ -341,22 +313,20 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
     # EKF
     # Create a list of sensor observations
     # form pronto
-    for leg in range(4):  # 4 legs
-        J = fk_Jacobian(servo_Angle_mes[leg])
-        v_from_leg_k[leg] = -J @ angular_velocity_mes[leg, :] - np.cross(omega, Pos_in_base[leg, :]) + collect_v_noise
-        v_leg_odometry = v_leg_odometry + v_from_leg_k[leg, :] * (1 * isStep[leg])
+    for i in range(4):  # 4 legs
+        v_from_leg_k[i] = v_from_leg_k[i] + collect_v_noise
+        v_leg_odometry = v_leg_odometry + v_from_leg_k[i, :] * (1 * isStep[i])
     if num_of_step_leg:  # check that num_of_step_leg is not 0
         v_leg_odometry = v_leg_odometry / num_of_step_leg + collect_v_noise
         z_k = v_leg_odometry  # from leg odematry
     else:
         v_leg_odometry = np.zeros((1, 4))
-        z_k = v
 
     # covariance for the velocity measurement P_k calculate
     delta_v = v_leg_odometry - v_from_leg_k[isStep == 1, :]
     D_k = 1 / num_of_step_leg * (delta_v.T @ delta_v)
-    delta_force = 0
-    alpha = 1  # guess
+    delta_force = 1 / num_of_step_leg * sum(abs(Foot_Force_mes - FootForce_k_minus))
+    alpha = 0.2  # guess
     P_0_v = np.zeros((3, 3))  # my guess
     P_k_v = P_0_v + np.power((0.5 * D_k + I_3 * delta_force / alpha), 2)
 
@@ -395,51 +365,40 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
     # print("r:", r)
     # print("v:", v)
     # print("v_mes:", v_leg_odometry)
-    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep
+    return optimal_state_estimate_k, covariance_estimate_k, isStep, Foot_Force_mes
 
 
 class Imu:
-    def __init__(self, accelerometer, gyroscope, quaternion):
+    def __init__(self, accelerometer, gyroscope):
         self.accelerometer = accelerometer
         self.gyroscope = gyroscope
-        self.quaternion = quaternion
-
-    def __repr__(self):
-        return "accelerometer:% s gyroscope:% s quaternion:% s" % (self.accelerometer, self.gyroscope,
-                                                                   self.quaternion)
 
 
-class MotorState:
-    def __init__(self, q, dq):
-        self.q = q
-        self.dq = dq
-
-    def __repr__(self):
-        return "q:% s dq:% s" % (self.q, self.dq)
+class Legs_V:
+    def __init__(self, rf_V, lf_V, rr_V, lr_V):
+        self.FR = rf_V
+        self.FL = lf_V
+        self.RR = rr_V
+        self.RL = lr_V
 
 
 class LowState:
-    def __init__(self, q, dq, accelerometer, gyroscope, quaternion, footForce):
-        self.imu = Imu(accelerometer, gyroscope, quaternion)
-        motorState = []
-        for i in range(12):
-            motorState.append(MotorState(q[i], dq[i]))
-        self.motorState = motorState
+    def __init__(self, accelerometer, gyroscope, rf_V, lf_V, rr_V, lr_V, footForce):
+        self.imu = Imu(accelerometer, gyroscope)
+        self.Legs_V = Legs_V(rf_V, lf_V, rr_V, lr_V)
         self.footForce = footForce
-
-    def __repr__(self):
-        return "imu:% s motorState:% s footForce:% s" % (self.imu, self.motorState, self.footForce)
 
 
 def rosbag_2_array(path):
     step = 0
     record_file = open(path, 'r')
-    low_state_parameters = ["q", "dq", "ddq", "tau", "footForce", "quaternion", "gyroscope", "accelerometer"]
+    low_state_parameters = ["accel", "gyro", "rf_P", "lf_P", "rr_P", "lr_P", "rf_V", "lf_V", "rr_V", "lr_V",
+                            "footForce"]
     data = []
     all_data = record_file.readlines()
     while True:
-        step_index = step * 9
-        step_data = all_data[step_index:step_index + 9]
+        step_index = step * (len(low_state_parameters) + 1)
+        step_data = all_data[step_index:step_index + (len(low_state_parameters) + 1)]
         if not step_data:
             break
         i = 0
@@ -453,22 +412,9 @@ def rosbag_2_array(path):
             data.append(np.loadtxt(temp))
             # if line is empty
             # end of file is reached
-            step += 1
+        step += 1
     record_file.close()
     return data
-
-
-def update_lines(i, FR, FL, RR, RL):
-    line1 = art3d.Line3D([FR[i, 0] + com[i, 0], com[i, 0]], [FR[i, 1] + com[i, 1], com[i, 1]],
-                         [FR[i, 2] + com[i, 2], com[i, 2]], color='c')
-    line2 = art3d.Line3D([FL[i, 0] + com[i, 0], com[i, 0]], [FL[i, 1] + com[i, 1], com[i, 1]],
-                         [FL[i, 2] + com[i, 2], com[i, 2]], color='r')
-    line3 = art3d.Line3D([RR[i, 0] + com[i, 0], com[i, 0]], [RR[i, 1] + com[i, 1], com[i, 1]],
-                         [RR[i, 2] + com[i, 2], com[i, 2]], color='b')
-    line4 = art3d.Line3D([RL[i, 0] + com[i, 0], com[i, 0]], [RL[i, 1] + com[i, 1], com[i, 1]],
-                         [RL[i, 2] + com[i, 2], com[i, 2]], color='g')
-    lines = [line1, line2, line3, line4]
-    return line1, line2, line3, line4
 
 
 if __name__ == '__main__':
@@ -481,28 +427,33 @@ if __name__ == '__main__':
     # FOR FIRST ITERATION
     state_estimate_k_minus = np.zeros((15, 1))
     covariance_estimate_k_minus = np.zeros((15, 15))
-    path = '/home/tal/catkin_ws/src/Steps/robot_interface/sim_result.txt'
+    Foot_Force_mes_k_minus = np.array([64, 58, 29, 50])
+    path = '/home/tal/catkin_ws/src/Steps/robot_interface/stwalking70b.d_2021-12-15-11-21-00.txt'
     data = rosbag_2_array(path)
     i = 0
-    while time < 7:
-        q = data[i]
-        dq = data[i + 1]
-        ddq = data[i + 2]
-        tau = data[i + 3]
-        footForce = data[i + 4]
-        quaternion = data[i + 5]
-        gyroscope = data[i + 6]
-        accelerometer = data[i + 7]
-        i += 8
+    while time < 20:  # i+11 < len(data):,time < 15:  #
+        accelerometer = data[i]
+        gyroscope = data[i + 1]
+        rf_P = data[i + 2]
+        lf_P = data[i + 3]
+        rr_P = data[i + 4]
+        lr_P = data[i + 5]
+        leg_pos = np.array([rf_P, lf_P, rr_P, lr_P])
+        Pos_in_base.append(leg_pos)
+        rf_V = data[i + 6]
+        lf_V = data[i + 7]
+        rr_V = data[i + 8]
+        lr_V = data[i + 9]
+        footForce = data[i + 10]
+        i += 11
 
-        lowState = LowState(q, dq, accelerometer, gyroscope, quaternion, footForce)  # read sensors
-        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step = read_sensor(lowState,
-                                                                                        state_estimate_k_minus,
-                                                                                        covariance_estimate_k_minus)
+        lowState = LowState(accelerometer, gyroscope, rf_V, lf_V, rr_V, lr_V, footForce)  # read sensors
+        optimal_state_estimate_k, covariance_estimate_k, is_step, Foot_Force_mes = \
+            read_sensor(lowState, state_estimate_k_minus, covariance_estimate_k_minus, Foot_Force_mes_k_minus)
         x.append(optimal_state_estimate_k[0][0])
         y.append(optimal_state_estimate_k[1][0])
         z.append(optimal_state_estimate_k[2][0])
-        Pos_in_base.append(leg_pos)
+
         isStep.append(is_step)
         print()
         print()
@@ -511,6 +462,7 @@ if __name__ == '__main__':
         # print('covariance_estimate_k: ', covariance_estimate_k)
         state_estimate_k_minus = optimal_state_estimate_k
         covariance_estimate_k_minus = covariance_estimate_k
+        Foot_Force_mes_k_minus = Foot_Force_mes
         time = time + dt
     t = np.arange(0., time - dt, dt)
     FR = np.zeros((len(x), 3))
@@ -541,7 +493,7 @@ if __name__ == '__main__':
     fig = plt.figure()
     ax = p3.Axes3D(fig)
     frames = []
-    time_vec = np.where(t > 4)
+    time_vec = np.where(t > 10)
     time_vec = time_vec[0]
     for i in time_vec:
         # xsq = [1, 0, 3, 4]
@@ -564,15 +516,15 @@ if __name__ == '__main__':
                              [RL[i, 2] + com[i, 0], com[i, 0]], color='g')
         ax.add_line(line4)
         ax.scatter(com[i, 2], com[i, 1], com[i, 0], label='com')
-        ax.set_xlim(z[i]-1, z[i]+1)
+        ax.set_xlim(z[i] - 1, z[i] + 1)
         ax.set_ylim(-1, 1)
         # ax.set_zlim(-x[0], x[-1])
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_zlabel("z")
+        ax.text2D(0.05, 0.95, "% s" % t[i], transform=ax.transAxes)
         ax.view_init(elev=25, azim=-60)
-        ax.set_title("% s" % t[i])
-        # plt.show()
+        # ax.set_title("% s" % t[i])
         plt.pause(0.0000001)
         ax.cla()
     # s = 10
