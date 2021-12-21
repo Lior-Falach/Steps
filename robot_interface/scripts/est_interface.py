@@ -89,6 +89,10 @@ class Est(object):
         #Initializing the measurments
         self.IMU_a = np.array([0, 0, 0])
         self.IMU_g = np.array([0, 0, 0])
+        self.Foot_force=np.array([0,0,0,0])
+        self.Contact=np.array([0,0,0,0])
+        self.TH=15 #Foot force threshold
+
 
         self.Q=Q_0
         self.R=R_0
@@ -99,7 +103,7 @@ class Est(object):
         self.K=[]#"Initialize the Kalman Gain"
         # Setting up the ROS part
         # --- Create the Subscriber to joint_ang  topic
-        self.ros_sub_state = rospy.Subscriber("/low_state_Lo_res", A1LowState, self.update_measurment, queue_size=1)
+        self.ros_sub_state = rospy.Subscriber("/low_state_Lo_res", A1HighState, self.update_measurment, queue_size=1)
         rospy.loginfo("> Subscriber to low_state correctly initialized")
         self.ros_pub_touch = rospy.Publisher("/touch", Int16MultiArray, queue_size=1)
         rospy.loginfo("> Publisher to touch correctly initialized")
@@ -111,11 +115,14 @@ class Est(object):
         self.IMU_a=message.accel
         self.IMU_g=message.gyro
         self.predict_state()
+        self.Foot_force_update(messag.footForce)
 
 
     def predict_state(self):
         "Performs the state prediction of the extended Kalman"
+        #Get the coardinate transformation matrix
         C=np.array(q2R(self.x.q.pos))
+        #State update
         self.x.r.pri = self.x.r.pos + dt * self.x.v.pos + 0.5 * dt * dt * (np.matmul(C.transpose(), self.IMU_a - self.x.bf.pos) + gravity)
         self.x.v.pri = self.v.pos + dt * (np.matmul(C, self.IMU_a - self.x.bf.pos) + gravity)
         self.x.q.pri = q_mult(w2zq(dt* (self.IMU_g-self.x.bw.pos)),self.x.q.pos)
@@ -123,17 +130,17 @@ class Est(object):
         self.x.plf.pri = self.x.plf.pos
         self.x.prr.pri = self.x.prr.pos
         self.x.plr.pri = self.x.plr.pos
-        F=F_func(dt,self.IMU_a-self.x.bf.pos,C,self.IMU_g-self.x.bw.pos)
+        #Process covariance and linearized dynamics
+        self.F, self.Q = self.F_func(dt,self.IMU_a-self.x.bf.pos,C,self.IMU_g-self.x.bw.pos)
+        #prior state covariance
         self.P.pri=np.matmul(np.matmul(F.transpose(),self.P.pos),F)+self.Q
 
-    def predict_cov(self):
-        if self.Type=='EKF':
-            F = self.F_func(self.x_post)
-            self.P_prior = dot(F, self.P_postP).dot(F.T) + self.Q
-        if self.Type=='UKF':
-            "Compute Sigma Points"
-            "Predict Sigma Points"
-            "Compute predicted Covariance"
+    def Foot_force_update(self,FF):
+        self.Foot_force=self.alpha*self.Foot_force+(1-self.alpha)*FF
+        self.Contact=self.Foot_force>=self.TH
+
+
+
     def comu_K_gain(self):
         H=self.H_func(self.x_prior)
         S=dot(H, self.P_postP).dot(H.T) + self.R
