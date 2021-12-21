@@ -254,7 +254,10 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, F
     state_estimate_k_ = state_estimate_k_minus
     # read low state massage
     # Measurement
-    imu_acc = np.array(LowState.imu.accelerometer) - g
+    imu_acc = np.array(LowState.imu.accelerometer)
+    ################
+    imu_acc[2] = 0  ####################
+    #################
     imu_omega = np.array(LowState.imu.gyroscope)
     v_from_leg_k[FR], v_from_leg_k[FL], v_from_leg_k[RR], v_from_leg_k[RL] = \
         LowState.Legs_V.FR, LowState.Legs_V.FL, LowState.Legs_V.RR, LowState.Legs_V.RL
@@ -422,6 +425,9 @@ if __name__ == '__main__':
     x = []
     y = []
     z = []
+    vx = []
+    vy = []
+    vz = []
     Pos_in_base = []
     isStep = []
     # FOR FIRST ITERATION
@@ -453,7 +459,9 @@ if __name__ == '__main__':
         x.append(optimal_state_estimate_k[0][0])
         y.append(optimal_state_estimate_k[1][0])
         z.append(optimal_state_estimate_k[2][0])
-
+        vx.append(optimal_state_estimate_k[3][0] * 3.6)
+        vy.append(optimal_state_estimate_k[4][0] * 3.6)
+        vz.append(optimal_state_estimate_k[5][0] * 3.6)
         isStep.append(is_step)
         print()
         print()
@@ -470,7 +478,7 @@ if __name__ == '__main__':
     RR = np.zeros((len(x), 3))
     RL = np.zeros((len(x), 3))
     com = np.zeros((len(x), 3))
-
+    speed = np.zeros((len(x), 3))
     # for i in range(len(x)):  # 4 legs
     #     FR[i, :] = Pos_in_base[i][0, 0] * isStep[i][0], Pos_in_base[i][0, 1] * isStep[i][0], Pos_in_base[i][0, 2] * isStep[i][0]
     #     FL[i, :] = Pos_in_base[i][1, 0] * isStep[i][1], Pos_in_base[i][1, 1] * isStep[i][1], Pos_in_base[i][1, 2] * isStep[i][1]
@@ -483,6 +491,7 @@ if __name__ == '__main__':
         RR[i, :] = Pos_in_base[i][2, 0], Pos_in_base[i][2, 1], Pos_in_base[i][2, 2]
         RL[i, :] = Pos_in_base[i][3, 0], Pos_in_base[i][3, 1], Pos_in_base[i][3, 2]
         com[i, :] = x[i], y[i], z[i]
+        speed[i, :] = vx[i], vy[i], vz[i]
 
     # FR = FR[~np.all(FR == 0, axis=1)]
     # FL = FL[~np.all(FL == 0, axis=1)]
@@ -493,7 +502,7 @@ if __name__ == '__main__':
     fig = plt.figure()
     ax = p3.Axes3D(fig)
     frames = []
-    time_vec = np.where(t > 10)
+    time_vec = np.where(t > 5)
     time_vec = time_vec[0]
     for i in time_vec:
         # xsq = [1, 0, 3, 4]
@@ -522,9 +531,13 @@ if __name__ == '__main__':
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_zlabel("z")
-        ax.text2D(0.05, 0.95, "% s" % t[i], transform=ax.transAxes)
+
+        ax.text2D(0.05, 0.8, 'pos(% s, %s, %s)' % (round(com[i, 2], 4), round(com[i, 1], 4), round(com[i, 0], 4)),
+                  transform=ax.transAxes)
+        ax.text2D(0.05, 0.7, 'V:(% s, %s, %s)' % (round(speed[i, 2], 4), round(speed[i, 0], 4), round(speed[i, 0], 4)),
+                  transform=ax.transAxes)
+        ax.text2D(0.05, 0.9, "TIME:% s" % round(t[i], 4), transform=ax.transAxes)
         ax.view_init(elev=25, azim=-60)
-        # ax.set_title("% s" % t[i])
         plt.pause(0.0000001)
         ax.cla()
     # s = 10
