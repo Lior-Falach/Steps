@@ -4,8 +4,8 @@ import math
 from pyquaternion import Quaternion
 import random
 import matplotlib.pyplot as plt
-from io import StringIO
 
+from io import StringIO
 from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
 import matplotlib.animation as animation
@@ -13,12 +13,12 @@ from matplotlib.animation import FuncAnimation
 import mpl_toolkits.mplot3d.axes3d as p3
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-f = 100
+f = 200
 dt = 1 / f
 I_3 = np.eye(3, dtype=float)
 
 # State model noise covariance matrix Q_k
-Q = np.random.normal(0, 1, size=(6, 6)) * 0
+Q = np.random.normal(0, 1, size=(6, 6))
 
 # Measurement matrix H_k
 H = np.zeros((3, 15))
@@ -233,13 +233,13 @@ def get_quaternion_from_euler(roll, pitch, yaw):
     qz = np.cos(roll / 2) * np.cos(pitch / 2) * np.sin(yaw / 2) - np.sin(roll / 2) * np.sin(pitch / 2) * np.cos(yaw / 2)
     qw = np.cos(roll / 2) * np.cos(pitch / 2) * np.cos(yaw / 2) + np.sin(roll / 2) * np.sin(pitch / 2) * np.sin(yaw / 2)
 
-    return Quaternion(qx, qy, qz, qw)
+    return Quaternion(qw, qx, qy, qz)
 
 
-def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
+def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, reset_commend):
     b_q = Quaternion()  # q noise
     collect_v_noise = np.array([[0.0, 0.0, 0.0]])
-    g = np.array([[0.0, 0.0, -9.81]])
+    g = np.array([[0.0, 0.0, 0.0]])  # acc mes don't include gravity
     servo_Angle_mes = np.zeros((4, 3))
     angular_velocity_mes = np.zeros((4, 3))
     v_from_leg_k = np.zeros((4, 3))
@@ -292,20 +292,27 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
     Pos_in_shoulder = forward_kinematics(servo_Angle_mes)
     Pos_in_base = shoulder_2_base(Pos_in_shoulder)
     # print("Pos_in_base:", Pos_in_base)
-    acc_body = imu_acc - b_a_minus  # In body frame
-    omega = imu_omega - b_w_minus
+    if reset_commend:
+        b_a_minus = np.array([imu_acc])
+        b_w_minus = np.array([imu_omega])
+        acc_body = imu_acc - b_a_minus  # In body frame
+        omega = imu_omega - b_w_minus
+        q_k = q_k_minus
+    else:
+        acc_body = imu_acc - b_a_minus  # In body frame
+        omega = imu_omega - b_w_minus
+        rotation_angle = dt * LA.norm(omega)
+        rotation_axis = omega / LA.norm(omega)
+        q_update = Quaternion(axis=rotation_axis[0], angle=rotation_angle)
+        q_k = q_update * q_k_minus
 
-    rotation_angle = dt * LA.norm(omega)
-    rotation_axis = omega / LA.norm(omega)
     # quaternion update
     # Rotate in rotation_angle about rotation_axis, when rotation_angle is in radians
-    q_update = Quaternion(axis=rotation_axis[0], angle=rotation_angle)
-    q_k = q_update * q_k_minus
-    acc_world = q_k.rotate(acc_body[0])
     rotation_matrix = q_k.rotation_matrix  # quaternion to rotation_matrix of base to world
     euler_rotation = euler_from_quaternion(q_k)
-    v = v_minus + dt * (acc_world + g)
-    r = r_minus + dt * v_minus + math.pow(dt, 2) / 2 * (acc_world + g)
+    v = v_minus + dt * (
+            (- skew_symmetric_matrix(np.array([imu_omega])) @ v_minus.T).T + (rotation_matrix.T @ g.T).T + acc_body)
+    r = r_minus + dt * v_minus
     b_a = b_a_minus
     b_w = b_w_minus
 
@@ -334,7 +341,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
     W_c = np.concatenate((d_p_dot_du, d_rotation_matrix_dot_du, d_v_dot_du, d_b_a_dot_du, d_b_w_dot_du), axis=0)
 
     # Calculate state
-    state_estimate_k_ = state_estimate_k_ + f_c * dt
+    state_estimate_k_ = f_c
     A_k = np.eye(15, dtype=float) + A_c * dt
     W_k = W_c * dt
 
@@ -395,7 +402,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus):
     # print("r:", r)
     # print("v:", v)
     # print("v_mes:", v_leg_odometry)
-    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep
+    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, acc_body
 
 
 class Imu:
@@ -431,47 +438,32 @@ class LowState:
         return "imu:% s motorState:% s footForce:% s" % (self.imu, self.motorState, self.footForce)
 
 
-def rosbag_2_array(path):
-    step = 0
-    record_file = open(path, 'r')
-    low_state_parameters = ["q", "dq", "ddq", "tau", "footForce", "quaternion", "gyroscope", "accelerometer"]
-    data = []
-    all_data = record_file.readlines()
-    while True:
-        step_index = step * 9
-        step_data = all_data[step_index:step_index + 9]
-        if not step_data:
-            break
-        i = 0
-        for para in low_state_parameters:
-            to_delete = para + ": ["
-            para_string = step_data[i].replace(to_delete, '')
-            i += 1
-            para_string = para_string.replace(']', '')
-            para_string = para_string.replace(',', ' ')
-            temp = StringIO(para_string)
-            data.append(np.loadtxt(temp))
-            # if line is empty
-            # end of file is reached
-            step += 1
-    record_file.close()
-    return data
-
-
 if __name__ == '__main__':
     time = 0
+    t = []
     x = []
     y = []
     z = []
+    vx = []
+    vy = []
+    vz = []
+    accx = []
+    accy = []
+    accz = []
+    R = []
     Pos_in_base = []
     isStep = []
     # FOR FIRST ITERATION
+    reset_commend = False
+    delta_time_stepping = 0
+    # FOR FIRST ITERATION
     state_estimate_k_minus = np.zeros((15, 1))
-    covariance_estimate_k_minus = np.zeros((15, 15))
-    path = '/home/tal/catkin_ws/src/Steps/robot_interface/sim_result.txt'
-    data = rosbag_2_array(path)
+    covariance_estimate_k_minus = np.zeros((15, 15)) + 0.00000001
+
+    temp_data = np.load("/home/tal/catkin_ws/src/Steps/robot_interface/sim_result.npz", allow_pickle=True)
+    data = temp_data['arr_0']
     i = 0
-    while time < 7:
+    while time < 10:
         q = data[i]
         dq = data[i + 1]
         ddq = data[i + 2]
@@ -481,56 +473,90 @@ if __name__ == '__main__':
         gyroscope = data[i + 6]
         accelerometer = data[i + 7]
         i += 8
-
         lowState = LowState(q, dq, accelerometer, gyroscope, quaternion, footForce)  # read sensors
-        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step = read_sensor(lowState,
-                                                                                        state_estimate_k_minus,
-                                                                                        covariance_estimate_k_minus)
+        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, acc_body = read_sensor(
+            lowState,
+            state_estimate_k_minus,
+            covariance_estimate_k_minus,
+            reset_commend)
+        t.append(time)
         x.append(optimal_state_estimate_k[0][0])
         y.append(optimal_state_estimate_k[1][0])
         z.append(optimal_state_estimate_k[2][0])
+        vx.append(optimal_state_estimate_k[6][0])
+        vy.append(optimal_state_estimate_k[7][0])
+        vz.append(optimal_state_estimate_k[8][0])
+        accx.append(accelerometer[0])
+        accy.append(accelerometer[1])
+        accz.append(accelerometer[2])
         Pos_in_base.append(leg_pos)
         isStep.append(is_step)
+        R.append(rotation_matrix)
         print()
         print()
         print("time:", time)
-        # print('optimal_state_estimate_k: ', optimal_state_estimate_k)
+        print('optimal_state_estimate_k: ', optimal_state_estimate_k)
         # print('covariance_estimate_k: ', covariance_estimate_k)
         state_estimate_k_minus = optimal_state_estimate_k
         covariance_estimate_k_minus = covariance_estimate_k
         time = time + dt
+        delta_time_stepping += dt
+        if all(isStep[-1]):
+            delta_time_stepping += dt
+            if delta_time_stepping > 0.2:
+                reset_commend = True
+                delta_time_stepping = 0
+        else:
+            reset_commend = False
+            delta_time_stepping = 0
+
     t = np.arange(0., time - dt, dt)
+
     FR = np.zeros((len(x), 3))
     FL = np.zeros((len(x), 3))
     RR = np.zeros((len(x), 3))
     RL = np.zeros((len(x), 3))
-    com = np.zeros((len(x), 3))
-
-    # for i in range(len(x)):  # 4 legs
-    #     FR[i, :] = Pos_in_base[i][0, 0] * isStep[i][0], Pos_in_base[i][0, 1] * isStep[i][0], Pos_in_base[i][0, 2] * isStep[i][0]
-    #     FL[i, :] = Pos_in_base[i][1, 0] * isStep[i][1], Pos_in_base[i][1, 1] * isStep[i][1], Pos_in_base[i][1, 2] * isStep[i][1]
-    #     RR[i, :] = Pos_in_base[i][2, 0] * isStep[i][2], Pos_in_base[i][2, 1] * isStep[i][2], Pos_in_base[i][2, 2] * isStep[i][2]
-    #     RL[i, :] = Pos_in_base[i][3, 0] * isStep[i][3], Pos_in_base[i][3, 1] * isStep[i][3], Pos_in_base[i][3, 2] * isStep[i][3]
-    #     com[i, :] = x[i], y[i], z[i]
+    is_walking = np.zeros((len(x), 1))
     for i in range(len(x)):  # 4 legs
         FR[i, :] = Pos_in_base[i][0, 0], Pos_in_base[i][0, 1], Pos_in_base[i][0, 2]
         FL[i, :] = Pos_in_base[i][1, 0], Pos_in_base[i][1, 1], Pos_in_base[i][1, 2]
         RR[i, :] = Pos_in_base[i][2, 0], Pos_in_base[i][2, 1], Pos_in_base[i][2, 2]
         RL[i, :] = Pos_in_base[i][3, 0], Pos_in_base[i][3, 1], Pos_in_base[i][3, 2]
-        com[i, :] = x[i], y[i], z[i]
-
-    # FR = FR[~np.all(FR == 0, axis=1)]
-    # FL = FL[~np.all(FL == 0, axis=1)]
-    # RR = RR[~np.all(RR == 0, axis=1)]
-    # RL = RL[~np.all(RL == 0, axis=1)]
-
+        is_walking[i] = ~np.all(isStep[i])
     # Draw a line
+    all_walking_ind = np.where(is_walking)
+    start_walking_ind = all_walking_ind[0][0]
+    fig = plt.figure()
+    plt.subplot(3, 1, 1)
+    plt.plot(t, x, label='x')
+    plt.plot(t, y, label='y')
+    plt.plot(t, z, label='z')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 2)
+    plt.plot(t, vx, label='vx')
+    plt.plot(t, vy, label='vy')
+    plt.plot(t, vz, label='vz')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 3)
+    plt.plot(t, accx, label='accx')
+    plt.plot(t, accy, label='accy')
+    plt.plot(t, accz, label='accz')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.show
+
     fig = plt.figure()
     ax = p3.Axes3D(fig)
     frames = []
-    time_vec = np.where(t > 4)
+    time_vec = np.where(t > 5)
     time_vec = time_vec[0]
-    for i in time_vec:
+    i = 0
+    while i < len(x):
         # xsq = [1, 0, 3, 4]
         # ysq = [0, 5, 5, 1]
         # zsq = [1, 3, 4, 0]
@@ -538,30 +564,41 @@ if __name__ == '__main__':
         # poly = Poly3DCollection(vertices, alpha=0.8)
         # ax.add_collection3d(poly)
 
-        line1 = art3d.Line3D([FR[i, 0] + com[i, 2], com[i, 2]], [FR[i, 1] + com[i, 1], com[i, 1]],
-                             [FR[i, 2] + com[i, 0], com[i, 0]], color='c')
+        line1 = art3d.Line3D([FR[i, 0] + x[i], x[i]], [FR[i, 1] + y[i], y[i]],
+                             [FR[i, 2] + z[i], z[i]], color='c')
         ax.add_line(line1)
-        line2 = art3d.Line3D([FL[i, 0] + com[i, 2], com[i, 2]], [FL[i, 1] + com[i, 1], com[i, 1]],
-                             [FL[i, 2] + com[i, 0], com[i, 0]], color='r')
+        line2 = art3d.Line3D([FL[i, 0] + x[i], x[i]], [FL[i, 1] + y[i], y[i]],
+                             [FL[i, 2] + z[i], z[i]], color='r')
         ax.add_line(line2)
-        line3 = art3d.Line3D([RR[i, 0] + com[i, 2], com[i, 2]], [RR[i, 1] + com[i, 1], com[i, 1]],
-                             [RR[i, 2] + com[i, 0], com[i, 0]], color='b')
+        line3 = art3d.Line3D([RR[i, 0] + x[i], x[i]], [RR[i, 1] + y[i], y[i]],
+                             [RR[i, 2] + z[i], z[i]], color='b')
         ax.add_line(line3)
-        line4 = art3d.Line3D([RL[i, 0] + com[i, 2], com[i, 2]], [RL[i, 1] + com[i, 1], com[i, 1]],
-                             [RL[i, 2] + com[i, 0], com[i, 0]], color='g')
+        line4 = art3d.Line3D([RL[i, 0] + x[i], x[i]], [RL[i, 1] + y[i], y[i]],
+                             [RL[i, 2] + z[i], z[i]], color='g')
         ax.add_line(line4)
-        ax.scatter(com[i, 2], com[i, 1], com[i, 0], label='com')
-        ax.set_xlim(z[i]-1, z[i]+1)
-        ax.set_ylim(-1, 1)
+        ax.scatter(x[i], y[i], z[i], label='com')
+        # ax.set_xlim(x[i] - 1, x[i] + 1)
+        # ax.set_ylim(-10, 10)
         # ax.set_zlim(-x[0], x[-1])
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_zlabel("z")
+        ax.text2D(0.05, 0.7, 'pos(% s, %s, %s)' % (x[i], y[i], z[i]),
+                  transform=ax.transAxes)
+        ax.text2D(0.05, 0.6, 'V:(% s, %s, %s)' % (vx[i], vy[i], vz[i]),
+                  transform=ax.transAxes)
+        ax.text2D(0.05, 0.5, 'acc:(% s, %s, %s)' % (accx[i], accy[i], accz[i]),
+                  transform=ax.transAxes)
+        ax.text2D(0.05, 0.4, 'R:(% s)' % ([R[i]]),
+                  transform=ax.transAxes)
+        ax.text2D(0.05, 0.8,
+                  'step:(FR:% s,FL: %s,RR: %s,RL: %s)' % (isStep[i][0], isStep[i][1], isStep[i][2], isStep[i][3]),
+                  transform=ax.transAxes)
+        ax.text2D(0.05, 0.9, "TIME:% s" % round(t[i], 4), transform=ax.transAxes)
         ax.view_init(elev=25, azim=-60)
-        ax.set_title("% s" % t[i])
-        # plt.show()
         plt.pause(0.0000001)
         ax.cla()
+        i += 3
     # s = 10
     # plt.scatter(FR[:, 0], FR[:, 1], label='FR', s=s)
     # plt.scatter(FL[:, 0], FL[:, 1], label='FL', s=s)
