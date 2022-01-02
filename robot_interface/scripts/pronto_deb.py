@@ -12,14 +12,18 @@ import matplotlib.animation as animation
 from matplotlib.animation import FuncAnimation
 import mpl_toolkits.mplot3d.axes3d as p3
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-
-f = 200
+from scipy.fft import fft,fftfreq
+f = 100
 dt = 1 / f
 I_3 = np.eye(3, dtype=float)
 
 # State model noise covariance matrix Q_k
-Q = np.random.normal(0, 1, size=(6, 6))
-
+Q = [[1.70263185, -1.44927732, 0.95105996, -0.45190575, -1.69205024, 1.49538745],
+     [1.57751834, -1.01320238, -1.97360812, -1.48444642, 0.50197512, 1.3540551],
+     [-0.847046, -0.02991231, -1.70271629, 0.37877357, -1.62739234, 0.67124554],
+     [1.61041854, -0.03259412, -2.66872417, -0.60406391, -0.43124619, -0.60861009],
+     [-0.21390035, 1.47023247, -1.81129592, 1.16655097, 0.98225882, 0.32267955],
+     [-1.57084544, -0.14073233, 2.37634776, -1.86233095, -0.28480153, 0.23114744]]
 # Measurement matrix H_k
 H = np.zeros((3, 15))
 H[:, 6:9] = I_3
@@ -236,14 +240,16 @@ def get_quaternion_from_euler(roll, pitch, yaw):
     return Quaternion(qw, qx, qy, qz)
 
 
-def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, reset_commend):
+def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, reset_commend, Last_LowState):
     b_q = Quaternion()  # q noise
-    collect_v_noise = np.array([[0.0, 0.0, 0.0]])
+    collect_v_noise = np.random.normal(0, 1, size=(1, 3))*0
+    acc_noise = np.random.normal(0, 1, size=(1, 3))*0
+    omega_noise = np.random.normal(0, 1, size=(1, 3))*0
     g = np.array([[0.0, 0.0, 0.0]])  # acc mes don't include gravity
     servo_Angle_mes = np.zeros((4, 3))
     angular_velocity_mes = np.zeros((4, 3))
     v_from_leg_k = np.zeros((4, 3))
-    v_leg_odometry = np.array([0.0, 0.0, 0.0])
+    v_leg_odometry = np.array([[0.0, 0.0, 0.0]])
 
     # read last step
 
@@ -258,8 +264,13 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     state_estimate_k_ = state_estimate_k_minus
     # read low state massage
     # Measurement
-    imu_acc = np.array(LowState.imu.accelerometer)
-    imu_omega = np.array(LowState.imu.gyroscope)
+    # Low Pass Filter On Mes
+    Cutoff_fre = 10
+    Cutoff_angular_velocity = 2 * math.pi * Cutoff_fre
+    Sampling_period = dt
+    alpha = Cutoff_angular_velocity * Sampling_period / (1 + Cutoff_angular_velocity * Sampling_period)
+    imu_acc = np.array(alpha * LowState.imu.accelerometer + (1 - alpha) * Last_LowState.imu.accelerometer)
+    imu_omega = np.array(alpha * LowState.imu.gyroscope + (1 - alpha) * Last_LowState.imu.gyroscope)
     # q_mes = np.array(LowState.quaternion)
     # imu_quaternion = Quaternion(q_mes)
 
@@ -295,12 +306,12 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     if reset_commend:
         b_a_minus = np.array([imu_acc])
         b_w_minus = np.array([imu_omega])
-        acc_body = imu_acc - b_a_minus  # In body frame
-        omega = imu_omega - b_w_minus
+        acc_body = imu_acc - b_a_minus - acc_noise  # In body frame
+        omega = imu_omega - b_w_minus - omega_noise
         q_k = q_k_minus
     else:
-        acc_body = imu_acc - b_a_minus  # In body frame
-        omega = imu_omega - b_w_minus
+        acc_body = imu_acc - b_a_minus - acc_noise  # In body frame
+        omega = imu_omega - b_w_minus - omega_noise
         rotation_angle = dt * LA.norm(omega)
         rotation_axis = omega / LA.norm(omega)
         q_update = Quaternion(axis=rotation_axis[0], angle=rotation_angle)
@@ -353,7 +364,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
         v_from_leg_k[leg] = -J @ angular_velocity_mes[leg, :] - np.cross(omega, Pos_in_base[leg, :]) + collect_v_noise
         v_leg_odometry = v_leg_odometry + v_from_leg_k[leg, :] * (1 * isStep[leg])
     if num_of_step_leg:  # check that num_of_step_leg is not 0
-        v_leg_odometry = v_leg_odometry / num_of_step_leg + collect_v_noise
+        v_leg_odometry = v_leg_odometry / num_of_step_leg #- collect_v_noise
         z_k = v_leg_odometry  # from leg odematry
     else:
         v_leg_odometry = np.zeros((1, 4))
@@ -402,7 +413,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     # print("r:", r)
     # print("v:", v)
     # print("v_mes:", v_leg_odometry)
-    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, acc_body
+    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, imu_acc, z_k
 
 
 class Imu:
@@ -447,6 +458,12 @@ if __name__ == '__main__':
     vx = []
     vy = []
     vz = []
+    vx_mes = []
+    vy_mes = []
+    vz_mes = []
+    filter_accx = []
+    filter_accy = []
+    filter_accz = []
     accx = []
     accy = []
     accz = []
@@ -458,12 +475,12 @@ if __name__ == '__main__':
     delta_time_stepping = 0
     # FOR FIRST ITERATION
     state_estimate_k_minus = np.zeros((15, 1))
-    covariance_estimate_k_minus = np.zeros((15, 15)) + 0.00000001
-
+    covariance_estimate_k_minus = np.zeros((15, 15)) + 0.00001
     temp_data = np.load("/home/tal/catkin_ws/src/Steps/robot_interface/sim_result.npz", allow_pickle=True)
     data = temp_data['arr_0']
+    lowState_k_minus = LowState(data[0], data[1], data[7], data[6], data[5], data[4])
     i = 0
-    while time < 10:
+    while time < 60:
         q = data[i]
         dq = data[i + 1]
         ddq = data[i + 2]
@@ -473,12 +490,13 @@ if __name__ == '__main__':
         gyroscope = data[i + 6]
         accelerometer = data[i + 7]
         i += 8
-        lowState = LowState(q, dq, accelerometer, gyroscope, quaternion, footForce)  # read sensors
-        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, acc_body = read_sensor(
-            lowState,
+        lowState_k = LowState(q, dq, accelerometer, gyroscope, quaternion, footForce)  # read sensors
+        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, filter_acc, z_k = read_sensor(
+            lowState_k,
             state_estimate_k_minus,
             covariance_estimate_k_minus,
-            reset_commend)
+            reset_commend,
+            lowState_k_minus)
         t.append(time)
         x.append(optimal_state_estimate_k[0][0])
         y.append(optimal_state_estimate_k[1][0])
@@ -486,6 +504,12 @@ if __name__ == '__main__':
         vx.append(optimal_state_estimate_k[6][0])
         vy.append(optimal_state_estimate_k[7][0])
         vz.append(optimal_state_estimate_k[8][0])
+        vx_mes.append(z_k[0][0])
+        vy_mes.append(z_k[0][1])
+        vz_mes.append(z_k[0][2])
+        filter_accx.append(filter_acc[0])
+        filter_accy.append(filter_acc[1])
+        filter_accz.append(filter_acc[2])
         accx.append(accelerometer[0])
         accy.append(accelerometer[1])
         accz.append(accelerometer[2])
@@ -499,6 +523,7 @@ if __name__ == '__main__':
         # print('covariance_estimate_k: ', covariance_estimate_k)
         state_estimate_k_minus = optimal_state_estimate_k
         covariance_estimate_k_minus = covariance_estimate_k
+        lowState_k_minus = lowState_k
         time = time + dt
         delta_time_stepping += dt
         if all(isStep[-1]):
@@ -510,20 +535,18 @@ if __name__ == '__main__':
             reset_commend = False
             delta_time_stepping = 0
 
-    t = np.arange(0., time - dt, dt)
-
     FR = np.zeros((len(x), 3))
     FL = np.zeros((len(x), 3))
     RR = np.zeros((len(x), 3))
     RL = np.zeros((len(x), 3))
     is_walking = np.zeros((len(x), 1))
-    for i in range(len(x)):  # 4 legs
+    for i in range(len(x)):
         FR[i, :] = Pos_in_base[i][0, 0], Pos_in_base[i][0, 1], Pos_in_base[i][0, 2]
         FL[i, :] = Pos_in_base[i][1, 0], Pos_in_base[i][1, 1], Pos_in_base[i][1, 2]
         RR[i, :] = Pos_in_base[i][2, 0], Pos_in_base[i][2, 1], Pos_in_base[i][2, 2]
         RL[i, :] = Pos_in_base[i][3, 0], Pos_in_base[i][3, 1], Pos_in_base[i][3, 2]
         is_walking[i] = ~np.all(isStep[i])
-    # Draw a line
+    # plots
     all_walking_ind = np.where(is_walking)
     start_walking_ind = all_walking_ind[0][0]
     fig = plt.figure()
@@ -551,10 +574,60 @@ if __name__ == '__main__':
     plt.show
 
     fig = plt.figure()
+    plt.subplot(3, 1, 1)
+    plt.plot(t, vx, label='vx')
+    plt.plot(t, vx_mes, label='vx_mes')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 2)
+    plt.plot(t, vy, label='vy')
+    plt.plot(t, vy_mes, label='vy_mes')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 3)
+    plt.plot(t, vz, label='vz')
+    plt.plot(t, vz_mes, label='vz_mes')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.show
+
+    plt.figure()
+    fft = np.fft.fft(accz)
+    fftfreq = np.fft.fftfreq(len(accz))
+    plt.ylabel("Amplitude")
+    plt.xlabel("Frequency [Hz]")
+    plt.plot(fftfreq, np.abs(fft))
+    plt.show()
+
+    plt.figure()
+    plt.subplot(3, 1, 1)
+    plt.plot(t, filter_accx, label='filter accx')
+    plt.plot(t, accx, label='accx')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 2)
+    plt.plot(t, filter_accy, label='filter accy')
+    plt.plot(t, accy, label='accy')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 3)
+    plt.plot(t, filter_accz, label='filter accz')
+    plt.plot(t, accz, label='accz')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.show
+
+    fig = plt.figure()
     ax = p3.Axes3D(fig)
     frames = []
-    time_vec = np.where(t > 5)
-    time_vec = time_vec[0]
+    # time_vec = np.where(t > 5)
+    # time_vec = time_vec[0]
     i = 0
     while i < len(x):
         # xsq = [1, 0, 3, 4]
@@ -577,9 +650,9 @@ if __name__ == '__main__':
                              [RL[i, 2] + z[i], z[i]], color='g')
         ax.add_line(line4)
         ax.scatter(x[i], y[i], z[i], label='com')
-        # ax.set_xlim(x[i] - 1, x[i] + 1)
-        # ax.set_ylim(-10, 10)
-        # ax.set_zlim(-x[0], x[-1])
+        ax.set_xlim(x[0] - 1, x[-1] + 1)
+        ax.set_ylim(-5, 5)
+        ax.set_zlim(-z[0], z[-1])
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         ax.set_zlabel("z")
@@ -598,7 +671,7 @@ if __name__ == '__main__':
         ax.view_init(elev=25, azim=-60)
         plt.pause(0.0000001)
         ax.cla()
-        i += 3
+        i += 6
     # s = 10
     # plt.scatter(FR[:, 0], FR[:, 1], label='FR', s=s)
     # plt.scatter(FL[:, 0], FL[:, 1], label='FL', s=s)
