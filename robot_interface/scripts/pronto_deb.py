@@ -4,6 +4,8 @@ import math
 from pyquaternion import Quaternion
 import random
 import matplotlib.pyplot as plt
+import pandas as pd
+from numpy import genfromtxt
 
 from io import StringIO
 from mpl_toolkits.mplot3d import Axes3D
@@ -14,17 +16,24 @@ import mpl_toolkits.mplot3d.axes3d as p3
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from scipy.fft import fft, fftfreq
 
-f = 100
+f = 500
 dt = 1 / f
 I_3 = np.eye(3, dtype=float)
 
 # State model noise covariance matrix Q_k
+
 Q = np.array([[1.5, -1.44927732, 0.95105996, -0.45190575, -1.69205024, 1.49538745],
               [1.57751834, -1.01320238, -1.97360812, -1.48444642, 0.50197512, 1.3540551],
               [-0.847046, -0.02991231, -1.70271629, 0.37877357, -1.62739234, 0.67124554],
               [1.61041854, -0.03259412, -2.66872417, -0.60406391, -0.43124619, -0.60861009],
               [-0.21390035, 1.47023247, -1.81129592, 1.16655097, 0.98225882, 0.32267955],
               [-1.57084544, -0.14073233, 2.37634776, -1.86233095, -0.28480153, 0.23114744]])
+Q = np.array([[1.5, 0.0, 0.0, 0.0, 0.0, 0.0],
+              [0.0, 3.0, 0.0, 0.0, 0.0, 0.0],
+              [0.0, 0.0, 4.0, 0.0, 0.0, 0.0],
+              [0.0, 0.0, 0.0, -0.6, 0.0, 0.0],
+              [0.0, 0.0, 0.0, 0.0, -0.5, 0.0],
+              [0.0, 0.0, 0.0, 0.0, 0.0, -0.6]])
 
 # Measurement matrix H_k
 H = np.zeros((3, 15))
@@ -63,16 +72,16 @@ RL_2 = 11
 
 Leg_offset_x = 0.1805  # robot x length(length) 0.1805*2
 Leg_offset_y = 0.047  # robot y length(width) 0.047*2
-Trunk_offset_z = 0.01675  # robot z length(height)
+Trunk_offset_z = 0.26  # robot z length(height)
 Shoulder_width = 0.0838  # from Hip servo to Thigh servo
 Upper_leg_length = 0.2  # from Thigh to Calf
 Lower_leg_length = 0.2  # from Calf to Foot
 Foot_radius = 0.2
 A1_mass = 11  # kg
 
-collect_v_noise = np.random.normal(0, 1, size=(1, 3))*0 / 100  # mes_velocity_noise
-acc_noise = np.random.normal(0, 1, size=(1, 3))*0 / 100  # mes_acc_noise
-omega_noise = np.random.normal(0, 1, size=(1, 3))*0 / 100  # mes_omega_noise
+collect_v_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 100  # mes_velocity_noise
+acc_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 100  # mes_acc_noise
+omega_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 100  # mes_omega_noise
 g = np.array([[0.0, 0.0, 0.0]])  # acc mes don't include gravity
 servo_Angle_mes = np.zeros((4, 3))
 angular_velocity_mes = np.zeros((4, 3))
@@ -471,26 +480,35 @@ if __name__ == '__main__':
     R = []
     Pos_in_base = []
     isStep = []
+    # read data
+    temp_data = pd.read_csv('/home/tal/catkin_ws/src/Steps/robot_interface/sim_result_new.txt')
+    data = temp_data.values
+    temp_real_data = pd.read_csv('/home/tal/catkin_ws/src/Steps/robot_interface/sim_result_real_new.txt')
+    real_data = temp_real_data.values
+
     # FOR FIRST ITERATION
     reset_commend = False
     delta_time_stepping = 0
     # FOR FIRST ITERATION
-    state_estimate_k_minus = np.zeros((15, 1))
+    lowState_k_minus = LowState(data[1][1:13], data[1][13:25], data[1][60:63], data[1][57:60], data[1][53:57],
+                                data[1][49:53])
+    r_0 = np.array([real_data[1, 1:4]])
+    euler_rotation_0 = euler_from_quaternion(Quaternion(real_data[1, 4:8]))
+    v_0 = np.array([[0.0, 0.0, 0.0]])
+    b_a_0 = np.array([[0.0, 0.0, 0.0]])
+    b_w_0 = np.array([[0.0, 0.0, 0.0]])
+
+    state_estimate_k_minus = np.concatenate((r_0, euler_rotation_0, v_0, b_a_0, b_w_0), axis=1).T
     covariance_estimate_k_minus = np.zeros((15, 15)) + 0.00001
-    temp_data = np.load("/home/tal/catkin_ws/src/Steps/robot_interface/sim_result.npz", allow_pickle=True)
-    data = temp_data['arr_0']
-    lowState_k_minus = LowState(data[0], data[1], data[7], data[6], data[5], data[4])
-    i = 0
+    i = 1
     while time < 60:
-        q = data[i]
-        dq = data[i + 1]
-        ddq = data[i + 2]
-        tau = data[i + 3]
-        footForce = data[i + 4]
-        quaternion = data[i + 5]
-        gyroscope = data[i + 6]
-        accelerometer = data[i + 7]
-        i += 8
+        q = data[i][1:13]
+        dq = data[i][13:25]
+        footForce = data[i][49:53]
+        quaternion = data[i][53:57]
+        gyroscope = data[i][57:60]
+        accelerometer = data[i][60:63]
+        i += 1
         lowState_k = LowState(q, dq, accelerometer, gyroscope, quaternion, footForce)  # read sensors
         optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, filter_acc, acc_after_bias, z_k = read_sensor(
             lowState_k,
@@ -499,7 +517,7 @@ if __name__ == '__main__':
             reset_commend,
             lowState_k_minus)
         t.append(time)
-        x.append(optimal_state_estimate_k[0][0])
+        x.append(-optimal_state_estimate_k[0][0])
         y.append(optimal_state_estimate_k[1][0])
         z.append(optimal_state_estimate_k[2][0])
         vx.append(optimal_state_estimate_k[6][0])
@@ -551,8 +569,35 @@ if __name__ == '__main__':
         RL[i, :] = Pos_in_base[i][3, 0], Pos_in_base[i][3, 1], Pos_in_base[i][3, 2]
         is_walking[i] = ~np.all(isStep[i])
     # plots
+    real_x = real_data[1:-1, 1]
+    real_y = real_data[1:-1, 2]
+    real_z = real_data[1:-1, 3]
+    # real_euler = euler_from_quaternion(Quaternion(real_data[1:-1, 4:8]))
+
     all_walking_ind = np.where(is_walking)
     start_walking_ind = all_walking_ind[0][0]
+
+    fig = plt.figure()
+    plt.subplot(3, 1, 1)
+    plt.plot(t, x, label='x')
+    plt.plot(t, real_x[0:len(x)], label='real_x')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 2)
+    plt.plot(t, y, label='y')
+    plt.plot(t, real_y[0:len(y)], label='real_y')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 3)
+    plt.plot(t, z, label='z')
+    plt.plot(t, real_z[0:len(z)], label='real_z')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.grid()
+    plt.legend()
+    plt.show
+
     fig = plt.figure()
     plt.subplot(3, 1, 1)
     plt.plot(t, x, label='x')
