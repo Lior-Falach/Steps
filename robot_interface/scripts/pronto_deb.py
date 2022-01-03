@@ -16,7 +16,7 @@ import mpl_toolkits.mplot3d.axes3d as p3
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from scipy.fft import fft, fftfreq
 
-f = 500
+f = 473
 dt = 1 / f
 I_3 = np.eye(3, dtype=float)
 
@@ -501,7 +501,8 @@ if __name__ == '__main__':
     state_estimate_k_minus = np.concatenate((r_0, euler_rotation_0, v_0, b_a_0, b_w_0), axis=1).T
     covariance_estimate_k_minus = np.zeros((15, 15)) + 0.00001
     i = 1
-    while time < 60:
+    number_of_steps = len(real_data)
+    while i < number_of_steps-1:  # time < 101.4:
         q = data[i][1:13]
         dq = data[i][13:25]
         footForce = data[i][49:53]
@@ -541,7 +542,7 @@ if __name__ == '__main__':
         print()
         print()
         print("time:", time)
-        print('optimal_state_estimate_k: ', optimal_state_estimate_k)
+        # print('optimal_state_estimate_k: ', optimal_state_estimate_k)
         # print('covariance_estimate_k: ', covariance_estimate_k)
         state_estimate_k_minus = optimal_state_estimate_k
         covariance_estimate_k_minus = covariance_estimate_k
@@ -581,18 +582,21 @@ if __name__ == '__main__':
     plt.subplot(3, 1, 1)
     plt.plot(t, x, label='x')
     plt.plot(t, real_x[0:len(x)], label='real_x')
+    plt.plot(t, real_x[0:len(x)] - x, label='err x')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
     plt.plot(t, y, label='y')
     plt.plot(t, real_y[0:len(y)], label='real_y')
+    plt.plot(t, real_y[0:len(x)] - y, label='err y')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
     plt.plot(t, z, label='z')
     plt.plot(t, real_z[0:len(z)], label='real_z')
+    plt.plot(t, real_z[0:len(x)] - z, label='err x')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
