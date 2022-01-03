@@ -12,18 +12,20 @@ import matplotlib.animation as animation
 from matplotlib.animation import FuncAnimation
 import mpl_toolkits.mplot3d.axes3d as p3
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from scipy.fft import fft,fftfreq
+from scipy.fft import fft, fftfreq
+
 f = 100
 dt = 1 / f
 I_3 = np.eye(3, dtype=float)
 
 # State model noise covariance matrix Q_k
-Q = [[1.70263185, -1.44927732, 0.95105996, -0.45190575, -1.69205024, 1.49538745],
-     [1.57751834, -1.01320238, -1.97360812, -1.48444642, 0.50197512, 1.3540551],
-     [-0.847046, -0.02991231, -1.70271629, 0.37877357, -1.62739234, 0.67124554],
-     [1.61041854, -0.03259412, -2.66872417, -0.60406391, -0.43124619, -0.60861009],
-     [-0.21390035, 1.47023247, -1.81129592, 1.16655097, 0.98225882, 0.32267955],
-     [-1.57084544, -0.14073233, 2.37634776, -1.86233095, -0.28480153, 0.23114744]]
+Q = np.array([[1.5, -1.44927732, 0.95105996, -0.45190575, -1.69205024, 1.49538745],
+              [1.57751834, -1.01320238, -1.97360812, -1.48444642, 0.50197512, 1.3540551],
+              [-0.847046, -0.02991231, -1.70271629, 0.37877357, -1.62739234, 0.67124554],
+              [1.61041854, -0.03259412, -2.66872417, -0.60406391, -0.43124619, -0.60861009],
+              [-0.21390035, 1.47023247, -1.81129592, 1.16655097, 0.98225882, 0.32267955],
+              [-1.57084544, -0.14073233, 2.37634776, -1.86233095, -0.28480153, 0.23114744]])
+
 # Measurement matrix H_k
 H = np.zeros((3, 15))
 H[:, 6:9] = I_3
@@ -68,8 +70,13 @@ Lower_leg_length = 0.2  # from Calf to Foot
 Foot_radius = 0.2
 A1_mass = 11  # kg
 
-lay_ang = np.array([0.0, 30 * math.pi / 180, -60 * math.pi / 180])  #### guess!####
-stand_ang = np.array([0.0, 30 * math.pi / 180, -60 * math.pi / 180])  ####guess!####
+collect_v_noise = np.random.normal(0, 1, size=(1, 3))*0 / 100  # mes_velocity_noise
+acc_noise = np.random.normal(0, 1, size=(1, 3))*0 / 100  # mes_acc_noise
+omega_noise = np.random.normal(0, 1, size=(1, 3))*0 / 100  # mes_omega_noise
+g = np.array([[0.0, 0.0, 0.0]])  # acc mes don't include gravity
+servo_Angle_mes = np.zeros((4, 3))
+angular_velocity_mes = np.zeros((4, 3))
+v_from_leg_k = np.zeros((4, 3))
 
 
 # transformation matrix from foot to center of the shoulder(hips)
@@ -241,18 +248,9 @@ def get_quaternion_from_euler(roll, pitch, yaw):
 
 
 def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, reset_commend, Last_LowState):
-    b_q = Quaternion()  # q noise
-    collect_v_noise = np.random.normal(0, 1, size=(1, 3))*0
-    acc_noise = np.random.normal(0, 1, size=(1, 3))*0
-    omega_noise = np.random.normal(0, 1, size=(1, 3))*0
-    g = np.array([[0.0, 0.0, 0.0]])  # acc mes don't include gravity
-    servo_Angle_mes = np.zeros((4, 3))
-    angular_velocity_mes = np.zeros((4, 3))
-    v_from_leg_k = np.zeros((4, 3))
     v_leg_odometry = np.array([[0.0, 0.0, 0.0]])
 
     # read last step
-
     r_minus = state_estimate_k_minus[0:3].T
     euler_rotation = state_estimate_k_minus[3:6]
     roll, pitch, yaw = euler_rotation
@@ -260,19 +258,16 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     v_minus = state_estimate_k_minus[6:9].T
     b_a_minus = state_estimate_k_minus[9:12].T  # acc noise
     b_w_minus = state_estimate_k_minus[12:15].T  # omega noise
-
-    state_estimate_k_ = state_estimate_k_minus
     # read low state massage
     # Measurement
     # Low Pass Filter On Mes
-    Cutoff_fre = 10
+    Cutoff_fre = 100
     Cutoff_angular_velocity = 2 * math.pi * Cutoff_fre
     Sampling_period = dt
     alpha = Cutoff_angular_velocity * Sampling_period / (1 + Cutoff_angular_velocity * Sampling_period)
+    alpha = 1
     imu_acc = np.array(alpha * LowState.imu.accelerometer + (1 - alpha) * Last_LowState.imu.accelerometer)
     imu_omega = np.array(alpha * LowState.imu.gyroscope + (1 - alpha) * Last_LowState.imu.gyroscope)
-    # q_mes = np.array(LowState.quaternion)
-    # imu_quaternion = Quaternion(q_mes)
 
     Hip_angle = np.array([LowState.motorState[FR_0].q, LowState.motorState[FL_0].q, LowState.motorState[RR_0].q,
                           LowState.motorState[RL_0].q])
@@ -299,10 +294,11 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     isStep = np.array(LowState.footForce)  # which leg is stepping
     num_of_step_leg = sum(isStep)  # number of leg that stepping
 
-    # Update state
+    # Update leg pos
     Pos_in_shoulder = forward_kinematics(servo_Angle_mes)
     Pos_in_base = shoulder_2_base(Pos_in_shoulder)
-    # print("Pos_in_base:", Pos_in_base)
+
+    # check if the robot stand more than 200 msec
     if reset_commend:
         b_a_minus = np.array([imu_acc])
         b_w_minus = np.array([imu_omega])
@@ -312,15 +308,17 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     else:
         acc_body = imu_acc - b_a_minus - acc_noise  # In body frame
         omega = imu_omega - b_w_minus - omega_noise
+        # quaternion update
+        # Rotate in rotation_angle about rotation_axis, when rotation_angle is in radians
         rotation_angle = dt * LA.norm(omega)
         rotation_axis = omega / LA.norm(omega)
         q_update = Quaternion(axis=rotation_axis[0], angle=rotation_angle)
         q_k = q_update * q_k_minus
 
-    # quaternion update
-    # Rotate in rotation_angle about rotation_axis, when rotation_angle is in radians
     rotation_matrix = q_k.rotation_matrix  # quaternion to rotation_matrix of base to world
     euler_rotation = euler_from_quaternion(q_k)
+    # update state
+    # x=[p,R,v,b_a,b_w]
     v = v_minus + dt * (
             (- skew_symmetric_matrix(np.array([imu_omega])) @ v_minus.T).T + (rotation_matrix.T @ g.T).T + acc_body)
     r = r_minus + dt * v_minus
@@ -364,9 +362,9 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
         v_from_leg_k[leg] = -J @ angular_velocity_mes[leg, :] - np.cross(omega, Pos_in_base[leg, :]) + collect_v_noise
         v_leg_odometry = v_leg_odometry + v_from_leg_k[leg, :] * (1 * isStep[leg])
     if num_of_step_leg:  # check that num_of_step_leg is not 0
-        v_leg_odometry = v_leg_odometry / num_of_step_leg #- collect_v_noise
+        v_leg_odometry = v_leg_odometry / num_of_step_leg  # - collect_v_noise
         z_k = v_leg_odometry  # from leg odematry
-    else:
+    else:  # the robot is not touch the ground
         v_leg_odometry = np.zeros((1, 4))
         z_k = v
 
@@ -413,7 +411,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     # print("r:", r)
     # print("v:", v)
     # print("v_mes:", v_leg_odometry)
-    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, imu_acc, z_k
+    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, imu_acc, acc_body, z_k
 
 
 class Imu:
@@ -461,12 +459,15 @@ if __name__ == '__main__':
     vx_mes = []
     vy_mes = []
     vz_mes = []
-    filter_accx = []
-    filter_accy = []
-    filter_accz = []
-    accx = []
-    accy = []
-    accz = []
+    filter_acc_x = []
+    filter_acc_y = []
+    filter_acc_z = []
+    acc_after_bias_x = []
+    acc_after_bias_y = []
+    acc_after_bias_z = []
+    acc_x = []
+    acc_y = []
+    acc_z = []
     R = []
     Pos_in_base = []
     isStep = []
@@ -491,7 +492,7 @@ if __name__ == '__main__':
         accelerometer = data[i + 7]
         i += 8
         lowState_k = LowState(q, dq, accelerometer, gyroscope, quaternion, footForce)  # read sensors
-        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, filter_acc, z_k = read_sensor(
+        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, filter_acc, acc_after_bias, z_k = read_sensor(
             lowState_k,
             state_estimate_k_minus,
             covariance_estimate_k_minus,
@@ -507,12 +508,15 @@ if __name__ == '__main__':
         vx_mes.append(z_k[0][0])
         vy_mes.append(z_k[0][1])
         vz_mes.append(z_k[0][2])
-        filter_accx.append(filter_acc[0])
-        filter_accy.append(filter_acc[1])
-        filter_accz.append(filter_acc[2])
-        accx.append(accelerometer[0])
-        accy.append(accelerometer[1])
-        accz.append(accelerometer[2])
+        filter_acc_x.append(filter_acc[0])
+        filter_acc_y.append(filter_acc[1])
+        filter_acc_z.append(filter_acc[2])
+        acc_after_bias_x.append(acc_after_bias[0][0])
+        acc_after_bias_y.append(acc_after_bias[0][1])
+        acc_after_bias_z.append(acc_after_bias[0][2])
+        acc_x.append(accelerometer[0])
+        acc_y.append(accelerometer[1])
+        acc_z.append(accelerometer[2])
         Pos_in_base.append(leg_pos)
         isStep.append(is_step)
         R.append(rotation_matrix)
@@ -565,9 +569,9 @@ if __name__ == '__main__':
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
-    plt.plot(t, accx, label='accx')
-    plt.plot(t, accy, label='accy')
-    plt.plot(t, accz, label='accz')
+    plt.plot(t, acc_after_bias_x, label='acc_after_bias_x')
+    plt.plot(t, acc_after_bias_y, label='acc_after_bias_y')
+    plt.plot(t, acc_after_bias_z, label='acc_after_bias_z')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
@@ -595,29 +599,51 @@ if __name__ == '__main__':
     plt.show
 
     plt.figure()
-    fft = np.fft.fft(accz)
-    fftfreq = np.fft.fftfreq(len(accz))
+    N = len(acc_z)
+    T = dt
+    Frequency = fftfreq(N, T)[:N // 2]
+    Amplitude_acc_x = fft(acc_x)
+    Amplitude_acc_y = fft(acc_y)
+    Amplitude_acc_z = fft(acc_z)
+    plt.subplot(3, 1, 1)
+    plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_x[0:N // 2]), label='fft acc x')
     plt.ylabel("Amplitude")
     plt.xlabel("Frequency [Hz]")
-    plt.plot(fftfreq, np.abs(fft))
+    plt.legend()
+    plt.grid()
+    plt.subplot(3, 1, 2)
+    plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_y[0:N // 2]), label='fft acc y')
+    plt.ylabel("Amplitude")
+    plt.xlabel("Frequency [Hz]")
+    plt.legend()
+    plt.grid()
+    plt.subplot(3, 1, 3)
+    plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_z[0:N // 2]), label='fft acc z')
+    plt.ylabel("Amplitude")
+    plt.xlabel("Frequency [Hz]")
+    plt.legend()
+    plt.grid()
     plt.show()
 
     plt.figure()
     plt.subplot(3, 1, 1)
-    plt.plot(t, filter_accx, label='filter accx')
-    plt.plot(t, accx, label='accx')
+    plt.plot(t, filter_acc_x, label='filter accx')
+    plt.plot(t, acc_after_bias_x, label='acc after bias x')
+    plt.plot(t, acc_x, label='accx')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
-    plt.plot(t, filter_accy, label='filter accy')
-    plt.plot(t, accy, label='accy')
+    plt.plot(t, filter_acc_y, label='filter accy')
+    plt.plot(t, acc_after_bias_y, label='acc after bias y')
+    plt.plot(t, acc_y, label='accy')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
-    plt.plot(t, filter_accz, label='filter accz')
-    plt.plot(t, accz, label='accz')
+    plt.plot(t, filter_acc_z, label='filter accz')
+    plt.plot(t, acc_after_bias_z, label='acc after bias z')
+    plt.plot(t, acc_z, label='accz')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
@@ -660,7 +686,7 @@ if __name__ == '__main__':
                   transform=ax.transAxes)
         ax.text2D(0.05, 0.6, 'V:(% s, %s, %s)' % (vx[i], vy[i], vz[i]),
                   transform=ax.transAxes)
-        ax.text2D(0.05, 0.5, 'acc:(% s, %s, %s)' % (accx[i], accy[i], accz[i]),
+        ax.text2D(0.05, 0.5, 'acc:(% s, %s, %s)' % (acc_after_bias_x[i], acc_after_bias_y[i], acc_after_bias_z[i]),
                   transform=ax.transAxes)
         ax.text2D(0.05, 0.4, 'R:(% s)' % ([R[i]]),
                   transform=ax.transAxes)
