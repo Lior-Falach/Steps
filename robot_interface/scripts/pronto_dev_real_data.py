@@ -23,12 +23,12 @@ I_3 = np.eye(3, dtype=float)
 
 # State model noise covariance matrix Q_k
 deg2rad = math.pi / 180
-Q_acc_xx = 0.3
+Q_acc_xx = 1.25
 Q_acc_xy = 0.0
 Q_acc_xz = 0.0
-Q_acc_yy = 0.1
+Q_acc_yy = 1.25
 Q_acc_yz = 0.0
-Q_acc_zz = 0.9
+Q_acc_zz = 1.25
 Q_omega_xx = 0.1 * deg2rad
 Q_omega_xy = 0.0 * deg2rad
 Q_omega_xz = 0.1 * deg2rad
@@ -51,7 +51,7 @@ Q = np.array([[Q_acc_xx, Q_acc_xy, Q_acc_xz, 0.0, 0.0, 0.0],
 # Measurement matrix H_k
 H = np.zeros((3, 15))
 H[:, 6:9] = I_3
-P_0_v = np.array([1.0, 1.0, 1.0]) * 0
+P_0_v = np.array([1.0, 1.0, 1.0]) * 0.0001
 
 # a1 const
 """
@@ -302,7 +302,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
         LowState.Legs_V.FR, LowState.Legs_V.FL, LowState.Legs_V.RR, LowState.Legs_V.RL
 
     Foot_Force_mes = LowState.footForce
-    isStep = Foot_Force_mes + 30 > 30  # which leg is stepping
+    isStep = Foot_Force_mes + np.array([15.0, 37.0, 14.0, 25.0]) > 65  # which leg is stepping
     num_of_step_leg = sum(isStep)  # number of leg that stepping
 
     # Update leg pos
@@ -375,16 +375,21 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     if reset_commend:  # check that num_of_step_leg is not 0
         v_leg_odometry = np.zeros((1, 3))
         delta_v = np.zeros((4, 3))
-    else:
+    elif num_of_step_leg:  # if num_of_step_leg>0
         v_leg_odometry = v_leg_odometry / num_of_step_leg
         delta_v = v_leg_odometry - v_from_leg_k[isStep == 1, :]
+    else:
+        v_leg_odometry = v
+        delta_v = np.zeros((4, 3))
+        num_of_step_leg=0.00000000000001
+
     r_leg_odometry = r_minus + v_leg_odometry * dt
     z_k = v_leg_odometry
 
     # covariance for the velocity measurement P_k calculate
     D_k = 1 / num_of_step_leg * (delta_v.T @ delta_v)
     delta_force = 1 / num_of_step_leg * sum(abs(Foot_Force_mes - FootForce_k_minus))
-    alpha = 5  # guess
+    alpha = 50  # guess
     P_k_v = P_0_v + np.power((0.5 * D_k + I_3 * delta_force / alpha), 2)
 
     #  Run the Extended Kalman Filter
