@@ -1,11 +1,12 @@
 import numpy as np
-from numpy import linalg as LA, ndarray
+from numpy import linalg as LA
 import math
 from pyquaternion import Quaternion
 import random
 import matplotlib.pyplot as plt
 import pandas as pd
 from numpy import genfromtxt
+from numpy import diff
 
 from io import StringIO
 from mpl_toolkits.mplot3d import Axes3D
@@ -21,23 +22,36 @@ dt = 1 / f
 I_3 = np.eye(3, dtype=float)
 
 # State model noise covariance matrix Q_k
-
-Q = np.array([[1.5, -1.44927732, 0.95105996, -0.45190575, -1.69205024, 1.49538745],
-              [1.57751834, -1.01320238, -1.97360812, -1.48444642, 0.50197512, 1.3540551],
-              [-0.847046, -0.02991231, -1.70271629, 0.37877357, -1.62739234, 0.67124554],
-              [1.61041854, -0.03259412, -2.66872417, -0.60406391, -0.43124619, -0.60861009],
-              [-0.21390035, 1.47023247, -1.81129592, 1.16655097, 0.98225882, 0.32267955],
-              [-1.57084544, -0.14073233, 2.37634776, -1.86233095, -0.28480153, 0.23114744]])
-Q = np.array([[1.5, 0.0, 0.0, 0.0, 0.0, 0.0],
-              [0.0, 3.0, 0.0, 0.0, 0.0, 0.0],
-              [0.0, 0.0, 4.0, 0.0, 0.0, 0.0],
-              [0.0, 0.0, 0.0, -0.6, 0.0, 0.0],
-              [0.0, 0.0, 0.0, 0.0, -0.5, 0.0],
-              [0.0, 0.0, 0.0, 0.0, 0.0, -0.6]])
+deg2rad = math.pi/180
+Q_acc_xx = 0.01
+Q_acc_xy = 0.0
+Q_acc_xz = 0.0
+Q_acc_yy = 0.0
+Q_acc_yz = 0.0
+Q_acc_zz = 0.0
+Q_omega_xx = 0.1*deg2rad
+Q_omega_xy = 0.1*deg2rad
+Q_omega_xz = 0.1*deg2rad
+Q_omega_yy = 0.1*deg2rad
+Q_omega_yz = 0.1*deg2rad
+Q_omega_zz = 0.1*deg2rad
+Q = np.array([[Q_acc_xx, Q_acc_xy, Q_acc_xz, 0.0, 0.0, 0.0],
+              [Q_acc_xy, Q_acc_yy, Q_acc_yz, 0.0, 0.0, 0.0],
+              [Q_acc_xz, Q_acc_yz, Q_acc_zz, 0.0, 0.0, 0.0],
+              [0.0, 0.0, 0.0, Q_omega_xx, Q_omega_xy, Q_omega_xz],
+              [0.0, 0.0, 0.0, Q_omega_xy, Q_omega_yy, Q_omega_yz],
+              [0.0, 0.0, 0.0, Q_omega_xz, Q_omega_yz, Q_omega_zz]])
+# Q = np.array([[1.5, -1.44927732, 0.95105996, -0.45190575, -1.69205024, 1.49538745],
+#               [1.57751834, -1.01320238, -1.97360812, -1.48444642, 0.50197512, 1.3540551],
+#               [-0.847046, -0.02991231, -1.70271629, 0.37877357, -1.62739234, 0.67124554],
+#               [1.61041854, -0.03259412, -2.66872417, -0.60406391, -0.43124619, -0.60861009],
+#               [-0.21390035, 1.47023247, -1.81129592, 1.16655097, 0.98225882, 0.32267955],
+#               [-1.57084544, -0.14073233, 2.37634776, -1.86233095, -0.28480153, 0.23114744]])  #from mc
 
 # Measurement matrix H_k
 H = np.zeros((3, 15))
 H[:, 6:9] = I_3
+P_0_v = np.array([1.0, 1.0, 1.0])*0.00001
 
 # a1 const
 """
@@ -79,9 +93,9 @@ Lower_leg_length = 0.2  # from Calf to Foot
 Foot_radius = 0.2
 A1_mass = 11  # kg
 
-collect_v_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 100  # mes_velocity_noise
-acc_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 100  # mes_acc_noise
-omega_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 100  # mes_omega_noise
+collect_v_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 1000  # mes_velocity_noise
+acc_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 1000  # mes_acc_noise
+omega_noise = np.random.normal(0, 1, size=(1, 3)) * 0 / 1000  # mes_omega_noise
 g = np.array([[0.0, 0.0, 0.0]])  # acc mes don't include gravity
 servo_Angle_mes = np.zeros((4, 3))
 angular_velocity_mes = np.zeros((4, 3))
@@ -111,7 +125,7 @@ def forward_kinematics(angle):
                     [0.0,0.0,0.0,1.0]])
                     transformation matrix
                     """
-    pos_in_shoulder: ndarray = np.array([px_0, py_0, pz_0])
+    pos_in_shoulder = np.array([px_0, py_0, pz_0])
     pos_in_shoulder.transpose()
     return pos_in_shoulder
 
@@ -256,7 +270,7 @@ def get_quaternion_from_euler(roll, pitch, yaw):
     return Quaternion(qw, qx, qy, qz)
 
 
-def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, reset_commend, Last_LowState):
+def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, reset_commend, Last_filter_acc, Last_filter_omega):
     v_leg_odometry = np.array([[0.0, 0.0, 0.0]])
 
     # read last step
@@ -264,19 +278,25 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     euler_rotation = state_estimate_k_minus[3:6]
     roll, pitch, yaw = euler_rotation
     q_k_minus = get_quaternion_from_euler(roll, pitch, yaw)
+    rotation_matrix_minus = q_k_minus.rotation_matrix
     v_minus = state_estimate_k_minus[6:9].T
     b_a_minus = state_estimate_k_minus[9:12].T  # acc noise
     b_w_minus = state_estimate_k_minus[12:15].T  # omega noise
     # read low state massage
     # Measurement
     # Low Pass Filter On Mes
-    Cutoff_fre = 100
+    Cutoff_fre = 5  # Hz
     Cutoff_angular_velocity = 2 * math.pi * Cutoff_fre
     Sampling_period = dt
     alpha = Cutoff_angular_velocity * Sampling_period / (1 + Cutoff_angular_velocity * Sampling_period)
     alpha = 1
-    imu_acc = np.array(alpha * LowState.imu.accelerometer + (1 - alpha) * Last_LowState.imu.accelerometer)
-    imu_omega = np.array(alpha * LowState.imu.gyroscope + (1 - alpha) * Last_LowState.imu.gyroscope)
+    imu_acc = np.array(alpha * LowState.imu.accelerometer + (1 - alpha) * Last_filter_acc)
+    Cutoff_fre = 50  # Hz
+    Cutoff_angular_velocity = 2 * math.pi * Cutoff_fre
+    Sampling_period = dt
+    alpha = Cutoff_angular_velocity * Sampling_period / (1 + Cutoff_angular_velocity * Sampling_period)
+    alpha = 1
+    imu_omega = alpha * LowState.imu.gyroscope + (1 - alpha) * Last_filter_omega
 
     Hip_angle = np.array([LowState.motorState[FR_0].q, LowState.motorState[FL_0].q, LowState.motorState[RR_0].q,
                           LowState.motorState[RL_0].q])
@@ -309,8 +329,8 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
 
     # check if the robot stand more than 200 msec
     if reset_commend:
-        b_a_minus = np.array([imu_acc])
-        b_w_minus = np.array([imu_omega])
+        b_a_minus = imu_acc
+        b_w_minus = imu_omega
         acc_body = imu_acc - b_a_minus - acc_noise  # In body frame
         omega = imu_omega - b_w_minus - omega_noise
         q_k = q_k_minus
@@ -329,8 +349,9 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     # update state
     # x=[p,R,v,b_a,b_w]
     v = v_minus + dt * (
-            (- skew_symmetric_matrix(np.array([imu_omega])) @ v_minus.T).T + (rotation_matrix.T @ g.T).T + acc_body)
-    r = r_minus + dt * v_minus
+            (- skew_symmetric_matrix(omega) @ v_minus.T).T + (rotation_matrix_minus.T @ g.T).T + acc_body)
+    v = v_minus + dt * acc_body
+    r = r_minus + (rotation_matrix_minus @ (dt * v_minus).T).T
     b_a = b_a_minus
     b_w = b_w_minus
 
@@ -368,21 +389,24 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     # form pronto
     for leg in range(4):  # 4 legs
         J = fk_Jacobian(servo_Angle_mes[leg])
-        v_from_leg_k[leg] = -J @ angular_velocity_mes[leg, :] - np.cross(omega, Pos_in_base[leg, :]) + collect_v_noise
+        v_from_leg_k[leg] = -J @ angular_velocity_mes[leg, :] - np.cross(omega, Pos_in_base[leg, :]) - collect_v_noise
         v_leg_odometry = v_leg_odometry + v_from_leg_k[leg, :] * (1 * isStep[leg])
-    if num_of_step_leg:  # check that num_of_step_leg is not 0
-        v_leg_odometry = v_leg_odometry / num_of_step_leg  # - collect_v_noise
-        z_k = v_leg_odometry  # from leg odematry
+    if reset_commend:  # check that num_of_step_leg is not 0
+        v_leg_odometry = np.zeros((1, 3))
+        delta_v = np.zeros((4, 3))
     else:  # the robot is not touch the ground
-        v_leg_odometry = np.zeros((1, 4))
+        v_leg_odometry = v_leg_odometry / num_of_step_leg - collect_v_noise
+        delta_v = v_leg_odometry - v_from_leg_k[isStep == 1, :]
+    r_leg_odometry = r_minus + v_leg_odometry * dt
+    z_k = v_leg_odometry
+    if num_of_step_leg > 2:
+        v_leg_odometry = v
         z_k = v
 
     # covariance for the velocity measurement P_k calculate
-    delta_v = v_leg_odometry - v_from_leg_k[isStep == 1, :]
     D_k = 1 / num_of_step_leg * (delta_v.T @ delta_v)
-    delta_force = 0
-    alpha = 1  # guess
-    P_0_v = np.zeros((3, 3))  # my guess
+    delta_force = np.random.rand(1, 1)
+    alpha = 5  # guess
     P_k_v = P_0_v + np.power((0.5 * D_k + I_3 * delta_force / alpha), 2)
 
     #  Run the Extended Kalman Filter
@@ -391,36 +415,7 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
         state_estimate_k_,  # Our most recent estimate of the state
         covariance_estimate_k_minus,  # Our most recent estimate of the cov
         P_k_v, A_k, W_k)  # Our most recent state covariance matrix)
-
-    # # Print a blank line
-    # print()
-    # print()
-    # print("imu_quaternion", imu_quaternion)
-    # print("omega", omega)
-    # print("imu_acc:", acc_body)
-    #
-    # print("Hip_angle:", Hip_angle)
-    # print("Thigh_angle:", Thigh_angle)
-    # print("Calf_angle:", Calf_angle)
-    #
-    # print("FR_pos_in_base", Pos_in_base[0, :])
-    # print("FL_pos_in_base", Pos_in_base[1, :])
-    # print("RR_pos_in_base", Pos_in_base[2, :])
-    # print("RL_pos_in_base", Pos_in_base[3, :])
-    #
-    # print("FR_footForce", Foot_Force_mes[0])
-    # print("FL_footForce", Foot_Force_mes[1])
-    # print("RR_footForce", Foot_Force_mes[2])
-    # print("RL_footForce", Foot_Force_mes[3])
-    #
-    # print("C:", rotation_matrix)
-    # print("acc_world:", acc_world)
-    # print("q_k or q_DOT:", q_k)
-    #
-    # print("r:", r)
-    # print("v:", v)
-    # print("v_mes:", v_leg_odometry)
-    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, imu_acc, acc_body, z_k
+    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, imu_acc, acc_body, z_k, state_estimate_k_, imu_omega, r_leg_odometry
 
 
 class Imu:
@@ -462,9 +457,18 @@ if __name__ == '__main__':
     x = []
     y = []
     z = []
+    x_imu = []
+    y_imu = []
+    z_imu = []
+    x_mes = []
+    y_mes = []
+    z_mes = []
     vx = []
     vy = []
     vz = []
+    vx_imu = []
+    vy_imu = []
+    vz_imu = []
     vx_mes = []
     vy_mes = []
     vz_mes = []
@@ -490,8 +494,10 @@ if __name__ == '__main__':
     reset_commend = False
     delta_time_stepping = 0
     # FOR FIRST ITERATION
-    lowState_k_minus = LowState(data[1][1:13], data[1][13:25], data[1][60:63], data[1][57:60], data[1][53:57],
-                                data[1][49:53])
+    # lowState_k_minus = LowState(data[1][1:13], data[1][13:25], data[1][60:63], data[1][57:60], data[1][53:57],
+    #                             data[1][49:53])
+    imu_acc_k_minus = np.array([data[1][60:63]])
+    imu_omega_k_minus = np.array([data[1][57:60]])
     r_0 = np.array([real_data[1, 1:4]])
     euler_rotation_0 = euler_from_quaternion(Quaternion(real_data[1, 4:8]))
     v_0 = np.array([[0.0, 0.0, 0.0]])
@@ -499,10 +505,11 @@ if __name__ == '__main__':
     b_w_0 = np.array([[0.0, 0.0, 0.0]])
 
     state_estimate_k_minus = np.concatenate((r_0, euler_rotation_0, v_0, b_a_0, b_w_0), axis=1).T
-    covariance_estimate_k_minus = np.zeros((15, 15)) + 0.00001
+    covariance_estimate_k_minus = np.zeros((15, 15)) + 0.0001
     i = 1
     number_of_steps = len(real_data)
-    while i < number_of_steps-1:  # time < 101.4:
+    RUN_TIME = 20
+    while time < RUN_TIME:  # i < number_of_steps-1:  # time < RUN_TIME:
         q = data[i][1:13]
         dq = data[i][13:25]
         footForce = data[i][49:53]
@@ -511,25 +518,35 @@ if __name__ == '__main__':
         accelerometer = data[i][60:63]
         i += 1
         lowState_k = LowState(q, dq, accelerometer, gyroscope, quaternion, footForce)  # read sensors
-        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, filter_acc, acc_after_bias, z_k = read_sensor(
+        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, filter_acc, acc_after_bias, z_k, state_estimate_no_ekf, filter_omega, r_leg_odometry\
+            = read_sensor(
             lowState_k,
             state_estimate_k_minus,
             covariance_estimate_k_minus,
             reset_commend,
-            lowState_k_minus)
+            imu_acc_k_minus, imu_omega_k_minus)
         t.append(time)
-        x.append(-optimal_state_estimate_k[0][0])
+        x.append(optimal_state_estimate_k[0][0])
         y.append(optimal_state_estimate_k[1][0])
         z.append(optimal_state_estimate_k[2][0])
+        x_imu.append(state_estimate_no_ekf[0][0])
+        y_imu.append(state_estimate_no_ekf[1][0])
+        z_imu.append(state_estimate_no_ekf[2][0])
+        x_mes.append(r_leg_odometry[0][0])
+        y_mes.append(r_leg_odometry[0][1])
+        z_mes.append(r_leg_odometry[0][2])
         vx.append(optimal_state_estimate_k[6][0])
         vy.append(optimal_state_estimate_k[7][0])
         vz.append(optimal_state_estimate_k[8][0])
+        vx_imu.append(state_estimate_no_ekf[6][0])
+        vy_imu.append(state_estimate_no_ekf[7][0])
+        vz_imu.append(state_estimate_no_ekf[8][0])
         vx_mes.append(z_k[0][0])
         vy_mes.append(z_k[0][1])
         vz_mes.append(z_k[0][2])
-        filter_acc_x.append(filter_acc[0])
-        filter_acc_y.append(filter_acc[1])
-        filter_acc_z.append(filter_acc[2])
+        filter_acc_x.append(filter_acc[0][0])
+        filter_acc_y.append(filter_acc[0][1])
+        filter_acc_z.append(filter_acc[0][2])
         acc_after_bias_x.append(acc_after_bias[0][0])
         acc_after_bias_y.append(acc_after_bias[0][1])
         acc_after_bias_z.append(acc_after_bias[0][2])
@@ -546,12 +563,13 @@ if __name__ == '__main__':
         # print('covariance_estimate_k: ', covariance_estimate_k)
         state_estimate_k_minus = optimal_state_estimate_k
         covariance_estimate_k_minus = covariance_estimate_k
-        lowState_k_minus = lowState_k
+        imu_acc_k_minus = np.array(filter_acc)
+        imu_omega_k_minus = np.array(filter_omega)
         time = time + dt
         delta_time_stepping += dt
         if all(isStep[-1]):
             delta_time_stepping += dt
-            if delta_time_stepping > 0.2:
+            if delta_time_stepping > 0.04:
                 reset_commend = True
                 delta_time_stepping = 0
         else:
@@ -563,209 +581,258 @@ if __name__ == '__main__':
     RR = np.zeros((len(x), 3))
     RL = np.zeros((len(x), 3))
     is_walking = np.zeros((len(x), 1))
+    num_of_step_leg = np.zeros((len(x), 1))
     for i in range(len(x)):
         FR[i, :] = Pos_in_base[i][0, 0], Pos_in_base[i][0, 1], Pos_in_base[i][0, 2]
         FL[i, :] = Pos_in_base[i][1, 0], Pos_in_base[i][1, 1], Pos_in_base[i][1, 2]
         RR[i, :] = Pos_in_base[i][2, 0], Pos_in_base[i][2, 1], Pos_in_base[i][2, 2]
         RL[i, :] = Pos_in_base[i][3, 0], Pos_in_base[i][3, 1], Pos_in_base[i][3, 2]
         is_walking[i] = ~np.all(isStep[i])
+        num_of_step_leg[i] = np.sum(isStep[i])
+
     # plots
-    real_x = real_data[1:-1, 1]
-    real_y = real_data[1:-1, 2]
-    real_z = real_data[1:-1, 3]
+    real_x = real_data[0:-1, 1]
+    real_y = real_data[0:-1, 2]
+    real_z = real_data[0:-1, 3]
+    real_vx = diff(real_x) / dt
+    real_vy = diff(real_y) / dt
+    real_vz = diff(real_z) / dt
     # real_euler = euler_from_quaternion(Quaternion(real_data[1:-1, 4:8]))
 
     all_walking_ind = np.where(is_walking)
     start_walking_ind = all_walking_ind[0][0]
 
-    fig = plt.figure()
-    plt.subplot(3, 1, 1)
-    plt.plot(t, x, label='x')
-    plt.plot(t, real_x[0:len(x)], label='real_x')
-    plt.plot(t, real_x[0:len(x)] - x, label='err x')
-    plt.scatter(t[start_walking_ind], 0, label='start walk')
-    plt.grid()
-    plt.legend()
-    plt.subplot(3, 1, 2)
-    plt.plot(t, y, label='y')
-    plt.plot(t, real_y[0:len(y)], label='real_y')
-    plt.plot(t, real_y[0:len(x)] - y, label='err y')
-    plt.scatter(t[start_walking_ind], 0, label='start walk')
-    plt.grid()
-    plt.legend()
-    plt.subplot(3, 1, 3)
-    plt.plot(t, z, label='z')
-    plt.plot(t, real_z[0:len(z)], label='real_z')
-    plt.plot(t, real_z[0:len(x)] - z, label='err x')
-    plt.scatter(t[start_walking_ind], 0, label='start walk')
-    plt.grid()
-    plt.legend()
-    plt.show
+    err_x = real_x[0:len(x)] - x
+    err_y = real_y[0:len(y)] - y
+    err_z = real_z[0:len(z)] - z
+    total_err = np.sqrt(err_x ** 2 + err_y ** 2 + err_z ** 2)
 
-    fig = plt.figure()
+    fig, (ax1, ax2, ax3) = plt.subplots(3, sharex=True)
+    fig.suptitle('total err(% s)' % total_err[-1])
+    ax1.plot(t, x, label='x')
+    ax1.plot(t, err_x, '-.', label='err x')
+    ax1.plot(t, real_x[0:len(x)], '--', label='real_x')
+    ax1.text(0, x[-1], 'err(% s)' % err_x[-1], fontsize=12)
+    ax1.scatter(t[start_walking_ind], 0, label='start walk')
+    ax1.grid()
+    ax1.legend()
+
+    ax2.plot(t, y, label='y')
+    ax2.plot(t, real_y[0:len(y)], '--', label='real_y')
+    ax2.plot(t, err_y, '-.', label='err y')
+    ax2.text(0, y[-1], 'err(% s)' % err_y[-1], fontsize=12)
+    ax2.scatter(t[start_walking_ind], 0, label='start walk')
+    ax2.grid()
+    ax2.legend()
+
+    ax3.plot(t, z, label='z')
+    ax3.plot(t, real_z[0:len(z)], '--', label='real_z')
+    ax3.plot(t, err_z, '-.', label='err z')
+    ax3.text(0, z[-1], 'err(% s)' % err_z[-1], fontsize=12)
+    ax3.scatter(t[start_walking_ind], 0, label='start walk')
+    ax3.grid()
+    ax3.legend()
+
+    plt.figure()
     plt.subplot(3, 1, 1)
     plt.plot(t, x, label='x')
-    plt.plot(t, y, label='y')
-    plt.plot(t, z, label='z')
+    plt.plot(t, y, '--', label='y')
+    plt.plot(t, z, '-.', label='z')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
     plt.plot(t, vx, label='vx')
-    plt.plot(t, vy, label='vy')
-    plt.plot(t, vz, label='vz')
+    plt.plot(t, vy, '--', label='vy')
+    plt.plot(t, vz, '-.', label='vz')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
     plt.plot(t, acc_after_bias_x, label='acc_after_bias_x')
-    plt.plot(t, acc_after_bias_y, label='acc_after_bias_y')
-    plt.plot(t, acc_after_bias_z, label='acc_after_bias_z')
+    plt.plot(t, acc_after_bias_y, '--', label='acc_after_bias_y')
+    plt.plot(t, acc_after_bias_z, '-.', label='acc_after_bias_z')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
-    plt.show
 
-    fig = plt.figure()
+    plt.figure()
     plt.subplot(3, 1, 1)
     plt.plot(t, vx, label='vx')
-    plt.plot(t, vx_mes, label='vx_mes')
+    plt.plot(t, vx_mes, '--', label='vx_mes')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.plot(t, num_of_step_leg, label='number of stepping legs')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
     plt.plot(t, vy, label='vy')
-    plt.plot(t, vy_mes, label='vy_mes')
+    plt.plot(t, vy_mes, '--', label='vy_mes')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.plot(t, num_of_step_leg, label='number of stepping legs')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
     plt.plot(t, vz, label='vz')
-    plt.plot(t, vz_mes, label='vz_mes')
+    plt.plot(t, vz_mes, '--', label='vz_mes')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.plot(t, num_of_step_leg, label='number of stepping legs')
     plt.grid()
     plt.legend()
-    plt.show
-
-    plt.figure()
-    N = len(acc_z)
-    T = dt
-    Frequency = fftfreq(N, T)[:N // 2]
-    Amplitude_acc_x = fft(acc_x)
-    Amplitude_acc_y = fft(acc_y)
-    Amplitude_acc_z = fft(acc_z)
-    plt.subplot(3, 1, 1)
-    plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_x[0:N // 2]), label='fft acc x')
-    plt.ylabel("Amplitude")
-    plt.xlabel("Frequency [Hz]")
-    plt.legend()
-    plt.grid()
-    plt.subplot(3, 1, 2)
-    plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_y[0:N // 2]), label='fft acc y')
-    plt.ylabel("Amplitude")
-    plt.xlabel("Frequency [Hz]")
-    plt.legend()
-    plt.grid()
-    plt.subplot(3, 1, 3)
-    plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_z[0:N // 2]), label='fft acc z')
-    plt.ylabel("Amplitude")
-    plt.xlabel("Frequency [Hz]")
-    plt.legend()
-    plt.grid()
-    plt.show()
-
+    # plt.figure()
+    # N = len(acc_z)
+    # T = dt
+    # Frequency = fftfreq(N, T)[:N // 2]
+    # Amplitude_acc_x = fft(acc_x)
+    # Amplitude_acc_y = fft(acc_y)
+    # Amplitude_acc_z = fft(acc_z)
+    # plt.subplot(3, 1, 1)
+    # plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_x[0:N // 2]), label='fft acc x')
+    # plt.ylabel("Amplitude")
+    # plt.xlabel("Frequency [Hz]")
+    # plt.legend()
+    # plt.grid()
+    # plt.subplot(3, 1, 2)
+    # plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_y[0:N // 2]), label='fft acc y')
+    # plt.ylabel("Amplitude")
+    # plt.xlabel("Frequency [Hz]")
+    # plt.legend()
+    # plt.grid()
+    # plt.subplot(3, 1, 3)
+    # plt.plot(Frequency, 2.0 / N * np.abs(Amplitude_acc_z[0:N // 2]), label='fft acc z')
+    # plt.ylabel("Amplitude")
+    # plt.xlabel("Frequency [Hz]")
+    # plt.legend()
+    # plt.grid()
+    # plt.show()
+    #
     plt.figure()
     plt.subplot(3, 1, 1)
     plt.plot(t, filter_acc_x, label='filter accx')
-    plt.plot(t, acc_after_bias_x, label='acc after bias x')
-    plt.plot(t, acc_x, label='accx')
+    plt.plot(t, acc_after_bias_x, '--', label='acc after bias x')
+    plt.plot(t, acc_x, '-.', label='accx')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
     plt.plot(t, filter_acc_y, label='filter accy')
-    plt.plot(t, acc_after_bias_y, label='acc after bias y')
-    plt.plot(t, acc_y, label='accy')
+    plt.plot(t, acc_after_bias_y, '--', label='acc after bias y')
+    plt.plot(t, acc_y, '-.', label='accy')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
     plt.plot(t, filter_acc_z, label='filter accz')
-    plt.plot(t, acc_after_bias_z, label='acc after bias z')
-    plt.plot(t, acc_z, label='accz')
+    plt.plot(t, acc_after_bias_z, '--', label='acc after bias z')
+    plt.plot(t, acc_z, '-.', label='accz')
     plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
-    plt.show
 
-    fig = plt.figure()
-    ax = p3.Axes3D(fig)
-    frames = []
-    # time_vec = np.where(t > 5)
-    # time_vec = time_vec[0]
-    i = 0
-    while i < len(x):
-        # xsq = [1, 0, 3, 4]
-        # ysq = [0, 5, 5, 1]
-        # zsq = [1, 3, 4, 0]
-        # vertices = [list(zip(x, y, z))]
-        # poly = Poly3DCollection(vertices, alpha=0.8)
-        # ax.add_collection3d(poly)
+    plt.figure()
+    plt.subplot(3, 1, 1)
+    plt.plot(t, x, label='x')
+    plt.plot(t, x_imu, '--', label='x_imu')
+    plt.plot(t, real_x[0:len(x)], '2', label='real_x')
+    plt.plot(t, x_mes, '-.', label='x_mes')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    # plt.plot(t, num_of_step_leg, label='number of stepping legs')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 2)
+    plt.plot(t, y, label='y')
+    plt.plot(t, y_imu, '--', label='y_imu')
+    plt.plot(t, real_y[0:len(y)], '2', label='real_y')
+    plt.plot(t, y_mes, '-.', label='y_mes')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    # plt.plot(t, num_of_step_leg, label='number of stepping legs')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 3)
+    plt.plot(t, z, label='z')
+    plt.plot(t, z_imu, '--', label='z_imu')
+    plt.plot(t, real_z[0:len(z)], '2', label='real_z')
+    plt.plot(t, z_mes, '-.', label='z_mes')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    # plt.plot(t, num_of_step_leg, label='number of stepping legs')
+    plt.grid()
+    plt.legend()
 
-        line1 = art3d.Line3D([FR[i, 0] + x[i], x[i]], [FR[i, 1] + y[i], y[i]],
-                             [FR[i, 2] + z[i], z[i]], color='c')
-        ax.add_line(line1)
-        line2 = art3d.Line3D([FL[i, 0] + x[i], x[i]], [FL[i, 1] + y[i], y[i]],
-                             [FL[i, 2] + z[i], z[i]], color='r')
-        ax.add_line(line2)
-        line3 = art3d.Line3D([RR[i, 0] + x[i], x[i]], [RR[i, 1] + y[i], y[i]],
-                             [RR[i, 2] + z[i], z[i]], color='b')
-        ax.add_line(line3)
-        line4 = art3d.Line3D([RL[i, 0] + x[i], x[i]], [RL[i, 1] + y[i], y[i]],
-                             [RL[i, 2] + z[i], z[i]], color='g')
-        ax.add_line(line4)
-        ax.scatter(x[i], y[i], z[i], label='com')
-        ax.set_xlim(x[0] - 1, x[-1] + 1)
-        ax.set_ylim(-5, 5)
-        ax.set_zlim(-z[0], z[-1])
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        ax.set_zlabel("z")
-        ax.text2D(0.05, 0.7, 'pos(% s, %s, %s)' % (x[i], y[i], z[i]),
-                  transform=ax.transAxes)
-        ax.text2D(0.05, 0.6, 'V:(% s, %s, %s)' % (vx[i], vy[i], vz[i]),
-                  transform=ax.transAxes)
-        ax.text2D(0.05, 0.5, 'acc:(% s, %s, %s)' % (acc_after_bias_x[i], acc_after_bias_y[i], acc_after_bias_z[i]),
-                  transform=ax.transAxes)
-        ax.text2D(0.05, 0.4, 'R:(% s)' % ([R[i]]),
-                  transform=ax.transAxes)
-        ax.text2D(0.05, 0.8,
-                  'step:(FR:% s,FL: %s,RR: %s,RL: %s)' % (isStep[i][0], isStep[i][1], isStep[i][2], isStep[i][3]),
-                  transform=ax.transAxes)
-        ax.text2D(0.05, 0.9, "TIME:% s" % round(t[i], 4), transform=ax.transAxes)
-        ax.view_init(elev=25, azim=-60)
-        plt.pause(0.0000001)
-        ax.cla()
-        i += 6
-    # s = 10
-    # plt.scatter(FR[:, 0], FR[:, 1], label='FR', s=s)
-    # plt.scatter(FL[:, 0], FL[:, 1], label='FL', s=s)
-    # plt.scatter(RR[:, 0], RR[:, 1], label='RR', s=s)
-    # plt.scatter(RL[:, 0], RL[:, 1], label='RL', s=s)
-    # plt.scatter(com[:, 0], com[:, 1], label='com', s=s)
-    # plt.scatter(FR[0, 0], FR[0, 1], label='first_FR', marker='x', s=s * 5)
-    # plt.scatter(FL[0, 0], FL[0, 1], label='first_FL', marker='x', s=s * 5)
-    # plt.scatter(RR[0, 0], RR[0, 1], label='first_RR', marker='x', s=s * 5)
-    # plt.scatter(RL[0, 0], RL[0, 1], label='first_RL', marker='x', s=s * 5)
-    # plt.scatter(com[0, 0], com[0, 1], label='first_com', marker='>', color='blue', s=s * 5)
-    # plt.scatter(FR[-1, 0], FR[-1, 1], label='last_FR', marker='^', s=s * 5)
-    # plt.scatter(FL[-1, 0], FL[-1, 1], label='last_FL', marker='^', s=s * 5)
-    # plt.scatter(RR[-1, 0], RR[-1, 1], label='last_RR', marker='^', s=s * 5)
-    # plt.scatter(RL[-1, 0], RL[-1, 1], label='last_RL', marker='^', s=s * 5)
-    # plt.scatter(com[-1, 0], com[-1, 1], label='last_com', marker='<', color='red', s=s * 5)
-
-    # plt.xlabel('x')
-    # plt.ylabel('y')
-    # plt.legend()
-    # plt.grid()
-    # plt.show()
+    plt.figure()
+    plt.subplot(3, 1, 1)
+    plt.plot(t, vx, label='vx')
+    plt.plot(t, vx_imu, '--', label='vx_imu')
+    plt.plot(t, vx_mes, '-.', label='vx_mes')
+    plt.plot(t, -real_vx[0:len(x)], '2', label='real_vx')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    # plt.plot(t, num_of_step_leg, label='number of stepping legs')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 2)
+    plt.plot(t, vy, label='vy')
+    plt.plot(t, vy_imu, '--', label='vy_imu(no ekf)')
+    plt.plot(t, vy_mes, '-.', label='vy_mes')
+    plt.plot(t, real_vy[0:len(y)], '2', label='real_vy')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    # plt.plot(t, num_of_step_leg, label='number of stepping legs')
+    plt.grid()
+    plt.legend()
+    plt.subplot(3, 1, 3)
+    plt.plot(t, vz, label='vz')
+    plt.plot(t, vz_imu, '--', label='vz_imu')
+    plt.plot(t, vz_mes, '-.', label='vz_mes')
+    plt.plot(t, real_vz[0:len(z)], '2', label='real_vz')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    # plt.plot(t, num_of_step_leg, label='number of stepping legs')
+    plt.grid()
+    plt.legend()
+    plt.pause(100000000000)
+    # # plt.show
+    #
+    # plt.figure()
+    # ax = p3.Axes3D(fig)
+    # # time_vec = np.where(t > 5)
+    # # time_vec = time_vec[0]
+    # i = 0
+    # while i < len(x):
+    #     # xsq = [1, 0, 3, 4]
+    #     # ysq = [0, 5, 5, 1]
+    #     # zsq = [1, 3, 4, 0]
+    #     # vertices = [list(zip(x, y, z))]
+    #     # poly = Poly3DCollection(vertices, alpha=0.8)
+    #     # ax.add_collection3d(poly)
+    #
+    #     line1 = art3d.Line3D([FR[i, 0] + x[i], x[i]], [FR[i, 1] + y[i], y[i]],
+    #                          [FR[i, 2] + z[i], z[i]], color='c')
+    #     ax.add_line(line1)
+    #     line2 = art3d.Line3D([FL[i, 0] + x[i], x[i]], [FL[i, 1] + y[i], y[i]],
+    #                          [FL[i, 2] + z[i], z[i]], color='r')
+    #     ax.add_line(line2)
+    #     line3 = art3d.Line3D([RR[i, 0] + x[i], x[i]], [RR[i, 1] + y[i], y[i]],
+    #                          [RR[i, 2] + z[i], z[i]], color='b')
+    #     ax.add_line(line3)
+    #     line4 = art3d.Line3D([RL[i, 0] + x[i], x[i]], [RL[i, 1] + y[i], y[i]],
+    #                          [RL[i, 2] + z[i], z[i]], color='g')
+    #     ax.add_line(line4)
+    #     ax.scatter(x[i], y[i], z[i], label='com')
+    #     ax.set_xlim(x[0] - 1, x[-1] + 1)
+    #     ax.set_ylim(-5, 5)
+    #     ax.set_zlim(-z[0], z[-1])
+    #     ax.set_xlabel("x")
+    #     ax.set_ylabel("y")
+    #     ax.set_zlabel("z")
+    #     ax.text2D(0.05, 0.7, 'pos(% s, %s, %s)' % (x[i], y[i], z[i]),
+    #               transform=ax.transAxes)
+    #     ax.text2D(0.05, 0.6, 'V:(% s, %s, %s)' % (vx[i], vy[i], vz[i]),
+    #               transform=ax.transAxes)
+    #     ax.text2D(0.05, 0.5, 'acc:(% s, %s, %s)' % (acc_after_bias_x[i], acc_after_bias_y[i], acc_after_bias_z[i]),
+    #               transform=ax.transAxes)
+    #     ax.text2D(0.05, 0.4, 'R:(% s)' % ([R[i]]),
+    #               transform=ax.transAxes)
+    #     ax.text2D(0.05, 0.8,
+    #               'step:(FR:% s,FL: %s,RR: %s,RL: %s)' % (isStep[i][0], isStep[i][1], isStep[i][2], isStep[i][3]),
+    #               transform=ax.transAxes)
+    #     ax.text2D(0.05, 0.9, "TIME:% s" % round(t[i], 4), transform=ax.transAxes)
+    #     ax.view_init(elev=25, azim=-60)
+    # plt.pause(0.0000001)
+    #     ax.cla()
+    #     i += 6
