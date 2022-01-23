@@ -22,7 +22,7 @@ def Gamma_func(dt,w):
 
 
 def F_func(dt,f,C,w,Qf,Qbf,Qw,Qbw):
-    f_cross = skew_m(f)
+    f_cross=skew_m(f)
     G0, G1, G2, G3=Gamma_func(dt,w)
     F=np.array([[np.eye(3)      , dt*np.eye(3)   ,  -0.5*dt*dt*np.matmul(C,f_cross), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -0.5*dt*dt*C   , np.zeros([3,3])],  #dr
                 [np.zeros([3,3]), np.eye(3)      ,   -dt*np.matmul(C,f_cross)      , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), dt*C           , np.zeros([3,3])],  #dv
@@ -42,15 +42,17 @@ def F_func(dt,f,C,w,Qf,Qbf,Qw,Qbw):
     return F, Q
 
 
-def h_func():
+def H_func(C,r,p1,p2,p3,p4,s1,s2,s3,s4):
+    H=np.array([-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), C, np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)],
+               [-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), np.zeros(3), C, np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)],
+               [-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), np.zeros(3), np.zeros(3), C, np.zeros(3), np.zeros(3), np.zeros(3)],
+               [-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), np.zeros(3), np.zeros(3), np.zeros(3), C, np.zeros(3), np.zeros(3)])
+    y=np.array([s1-np.matmul(C,p1-r)],
+               [s2-np.matmul(C,p2-r)],
+               [s3-np.matmul(C,p3-r)],
+               [s4-np.matmul(C,p4-r)])
 
-    return
-
-
-
-def H_func():
-
-    return
+    return H, y
 
 def R_0():
 
