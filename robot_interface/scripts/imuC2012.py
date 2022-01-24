@@ -5,9 +5,6 @@ from scipy import linalg
 from q_functions import w2zq, q_mult,skew_m
 g=np.array([0,0,9.8])
 
-P_0=
-
-
 def Gamma_func(dt,w):
     W=skew_m(w)
     Wi=numpy.linalg.inv(W)
@@ -27,7 +24,7 @@ def F_func(dt,f,C,w,Qf,Qbf,Qw,Qbw):
     F=np.array([[np.eye(3)      , dt*np.eye(3)   ,  -0.5*dt*dt*np.matmul(C,f_cross), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -0.5*dt*dt*C   , np.zeros([3,3])],  #dr
                 [np.zeros([3,3]), np.eye(3)      ,   -dt*np.matmul(C,f_cross)      , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), dt*C           , np.zeros([3,3])],  #dv
                 [np.zeros([3,3]), np.zeros([3,3]),   G0.tarnspose()                            , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -G1.transpose()             ],  #dq
-                [np.zeros([18,9]), np.eye(18)])
+                [np.zeros([18,9]), np.eye(18)]])
 
     Q=np.array([[((dt**3)/3)*Qf+((dt**5)/20)*Qbf, ((dt**2)/2)*Qf+((dt**4)/8)*Qbf, np.zeros([3,3])                       , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -((dt**3)/6)*Qbf, np.zeros([3,3])],#dr
                 [((dt**2)/2)*Qf+((dt**4)/8)*Qbf , dt*Qf+((dt**3)/3)*Qbf         , np.zeros([3,3])                       , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -((dt**3)/6)*Qbf, np.zeros([3,3])],#dv
@@ -43,21 +40,14 @@ def F_func(dt,f,C,w,Qf,Qbf,Qw,Qbw):
 
 
 def H_func(C,r,p1,p2,p3,p4,s1,s2,s3,s4):
-    H=np.array([-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), C, np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)],
+    H=np.array([[-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), C, np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)],
                [-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), np.zeros(3), C, np.zeros(3), np.zeros(3), np.zeros(3), np.zeros(3)],
                [-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), np.zeros(3), np.zeros(3), C, np.zeros(3), np.zeros(3), np.zeros(3)],
-               [-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), np.zeros(3), np.zeros(3), np.zeros(3), C, np.zeros(3), np.zeros(3)])
-    y=np.array([s1-np.matmul(C,p1-r)],
+               [-C, np.zeros(3), skew_m(np.matmul(C,p1-r)), np.zeros(3), np.zeros(3), np.zeros(3), C, np.zeros(3), np.zeros(3)]])
+    y=np.array([[s1-np.matmul(C,p1-r)],
                [s2-np.matmul(C,p2-r)],
                [s3-np.matmul(C,p3-r)],
-               [s4-np.matmul(C,p4-r)])
+               [s4-np.matmul(C,p4-r)]])
 
     return H, y
 
-def R_0():
-
-    return
-
-def Q_0():
-
-    return

@@ -43,7 +43,7 @@ def q_mult(q1, q2):#q1*q2
 
 def w2zq(w): #return the quaternion associated with a small rotation vector given by w*dt
     norm_w=LA.norm(w)
-    retunr np.array([sin(0.5*norm_w)*w/norm_w,cos(0.5*norm_w)])
+    return np.array([sin(0.5*norm_w)*w/norm_w,cos(0.5*norm_w)])
 
 def skew_m(v):
     return np.array([[0, -v[2], v[1]],[v[2], 0, -v[0]],[-v[1],v[0],0]])
