@@ -26,17 +26,17 @@ I_3 = np.eye(3, dtype=float)
 deg2rad = math.pi / 180
 
 Q_acc_xx = 0.02812317
-Q_acc_xy = -0.00887429
-Q_acc_xz = -0.01979142
+Q_acc_xy = -0.00887429*0
+Q_acc_xz = -0.01979142*0
 Q_acc_yy = 0.0120926
-Q_acc_yz = 0.01320716
+Q_acc_yz = 0.01320716*0
 Q_acc_zz = 0.04621758
 Q_omega_xx = 1.36808780e-04
-Q_omega_xy = 8.32883631e-07
-Q_omega_xz = -2.14137022e-05
+Q_omega_xy = 8.32883631e-07*0
+Q_omega_xz = -2.14137022e-05*0
 Q_omega_yy = 7.25576393e-05
-Q_omega_yz = 1.48528351e-06
-Q_omega_zz = 1.11080036e-04
+Q_omega_yz = 1.48528351e-06*0
+Q_omega_zz = 1.11080036e-04*0
 
 Q = np.array([[Q_acc_xx, Q_acc_xy, Q_acc_xz, 0.0, 0.0, 0.0],
               [Q_acc_xy, Q_acc_yy, Q_acc_yz, 0.0, 0.0, 0.0],
