@@ -26,17 +26,17 @@ I_3 = np.eye(3, dtype=float)
 deg2rad = math.pi / 180
 
 Q_acc_xx = 0.02812317
-Q_acc_xy = -0.00887429*0
-Q_acc_xz = -0.01979142*0
+Q_acc_xy = -0.00887429 * 0
+Q_acc_xz = -0.01979142 * 0
 Q_acc_yy = 0.0120926
-Q_acc_yz = 0.01320716*0
+Q_acc_yz = 0.01320716 * 0
 Q_acc_zz = 0.04621758
 Q_omega_xx = 1.36808780e-04
-Q_omega_xy = 8.32883631e-07*0
-Q_omega_xz = -2.14137022e-05*0
+Q_omega_xy = 8.32883631e-07 * 0
+Q_omega_xz = -2.14137022e-05 * 0
 Q_omega_yy = 7.25576393e-05
-Q_omega_yz = 1.48528351e-06*0
-Q_omega_zz = 1.11080036e-04*0
+Q_omega_yz = 1.48528351e-06 * 0
+Q_omega_zz = 1.11080036e-04
 
 Q = np.array([[Q_acc_xx, Q_acc_xy, Q_acc_xz, 0.0, 0.0, 0.0],
               [Q_acc_xy, Q_acc_yy, Q_acc_yz, 0.0, 0.0, 0.0],
@@ -93,7 +93,7 @@ A1_mass = 11  # kg
 collect_v_noise = np.random.normal(0, 1, size=(1, 3)) * 0.0  # mes_velocity_noise
 acc_noise = np.random.normal(0, 1, size=(1, 3)) * 0.0  # mes_acc_noise
 omega_noise = np.random.normal(0, 1, size=(1, 3)) * 0.00  # mes_omega_noise
-g = np.array([[0.0, 0.0, -9.81]])  # acc mes include gravity
+g = np.array([[0.0, 0.0, 10]])  # acc mes include gravity
 servo_Angle_mes = np.zeros((4, 3))
 angular_velocity_mes = np.zeros((4, 3))
 
@@ -197,7 +197,7 @@ def get_quaternion_from_euler(roll, pitch, yaw):
 
 
 def pronto_mean(LowState, state_estimate_k_minus, covariance_estimate_k_minus, reset_commend, Last_filter_acc,
-                Last_filter_omega, FootForce_k_minus):
+                Last_filter_omega, FootForce_k_minus, Legs_V_noise):
     v_leg_odometry = np.array([[0.0, 0.0, 0.0]])
     v_from_leg_k = np.zeros((4, 3))
 
@@ -227,10 +227,18 @@ def pronto_mean(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     imu_omega = (alpha * LowState.imu.gyroscope + (1 - alpha) * Last_filter_omega)
 
     v_from_leg_k[FR], v_from_leg_k[FL], v_from_leg_k[RR], v_from_leg_k[RL] = \
-        LowState.Legs_V.FR, LowState.Legs_V.FL, LowState.Legs_V.RR, LowState.Legs_V.RL
+        LowState.Legs_V.FR - Legs_V_noise[FR], LowState.Legs_V.FL - Legs_V_noise[FL], \
+        LowState.Legs_V.RR - Legs_V_noise[RR], LowState.Legs_V.RL - Legs_V_noise[RL]
 
+    Cutoff_fre = 10  # Hz
+    Cutoff_angular_velocity = 2 * math.pi * Cutoff_fre
+    Sampling_period = dt
+    alpha = Cutoff_angular_velocity * Sampling_period / (1 + Cutoff_angular_velocity * Sampling_period)
     Foot_Force_mes = LowState.footForce
-    isStep = Foot_Force_mes > np.array([79,	36,	44,	72]) * 0.95  # which leg is stepping
+    isStep = Foot_Force_mes > np.array([79, 36, 44, 72]) * 0.95  # which leg is stepping
+
+    Foot_Force_mes = (alpha * LowState.footForce + (1 - alpha) * FootForce_k_minus)
+
     num_of_step_leg = sum(isStep)  # number of leg that stepping
 
     # check if the robot stand more than 400 msec
@@ -248,15 +256,14 @@ def pronto_mean(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
         rotation_angle = dt * LA.norm(omega)
         rotation_axis = omega / LA.norm(omega)
         q_update = Quaternion(axis=rotation_axis[0], angle=rotation_angle)
-        q_k = q_update * q_k_minus
+        q_k = q_update
 
     rotation_matrix = q_k.rotation_matrix  # quaternion to rotation_matrix of base to world
     euler_rotation = euler_from_quaternion(q_k)
     # update state
     # x=[p,R,v,b_a,b_w]
-    v = v_minus + dt * (
-            (- skew_symmetric_matrix(omega) @ v_minus.T).T + (rotation_matrix_minus.T @ g.T).T + acc_body)
-    # v = v_minus + dt * (acc_body + (rotation_matrix_minus.T @ g.T).T)
+
+    v = v_minus + dt * ((- skew_symmetric_matrix(omega) @ v_minus.T).T + (rotation_matrix_minus.T @ g.T).T + acc_body)
     r = r_minus + (rotation_matrix_minus @ (dt * v_minus).T).T
     b_a = b_a_minus
     b_w = b_w_minus
@@ -313,7 +320,7 @@ def pronto_mean(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
     # covariance for the velocity measurement P_k calculate
     D_k = 1 / num_of_step_leg * (delta_v.T @ delta_v)
     delta_force = 1 / num_of_step_leg * sum(abs(Foot_Force_mes - FootForce_k_minus))
-    alpha = 100  # guess
+    alpha = 5000  # guess
     P_k_v = P_0_v + np.power((0.5 * D_k + I_3 * delta_force / alpha), 2)
 
     #  Run the Extended Kalman Filter
@@ -323,7 +330,7 @@ def pronto_mean(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
         covariance_estimate_k_minus,  # Our most recent estimate of the cov
         P_k_v, A_k, W_k)  # Our most recent state covariance matrix)
 
-    return optimal_state_estimate_k, covariance_estimate_k, Pos_in_base, isStep, rotation_matrix, imu_acc, acc_body, z_k, state_estimate_k_, imu_omega, r_leg_odometry
+    return optimal_state_estimate_k, covariance_estimate_k, isStep, rotation_matrix, imu_acc, acc_body, z_k, state_estimate_k_, imu_omega, r_leg_odometry, Foot_Force_mes
 
 
 class Imu:
@@ -377,13 +384,14 @@ if __name__ == '__main__':
     acc_x = []
     acc_y = []
     acc_z = []
-    roll_dot = []
-    picth_dot = []
-    yaw_dot = []
+    omega_x = []
+    omega_y = []
+    omega_z = []
     R = []
     Pos_in_base = []
     isStep = []
     footForce_vec = []
+    filter_footForce_vec = []
     # read data
     temp_data = pd.read_csv('/home/tal/catkin_ws/src/Steps/robot_interface/walking70b.c_2021-12-15-11-19-02.csv')
     data = temp_data.values
@@ -392,8 +400,6 @@ if __name__ == '__main__':
     reset_commend = False
     delta_time_stepping = 0
     # FOR FIRST ITERATION
-    # lowState_k_minus = LowState(data[1][1:13], data[1][13:25], data[1][60:63], data[1][57:60], data[1][53:57],
-    #                             data[1][49:53])
     imu_acc_k_minus = np.array([data[1][1:4]])
     imu_omega_k_minus = np.array([data[1][4:7]])
     FootForce_k_minus = data[1][31:35]
@@ -403,12 +409,14 @@ if __name__ == '__main__':
     b_a_0 = np.array([[0.0, 0.0, 0.0]])
     b_w_0 = np.array([[0.0, 0.0, 0.0]])
 
+    Legs_V_noise = [data[1][19:22], data[1][22:25], data[1][25:28], data[1][28:31]]
+
     state_estimate_k_minus = np.concatenate((r_0, euler_rotation_0, v_0, b_a_0, b_w_0), axis=1).T
     covariance_estimate_k_minus = np.zeros((15, 15)) + 0.01
     i = 1
     number_of_steps = len(data)
-    RUN_TIME = 60
-    while time < RUN_TIME:  # i < number_of_steps-1:  # time < RUN_TIME:
+    RUN_TIME = 10
+    while i < number_of_steps-1:  # i < number_of_steps-1:  # time < RUN_TIME:
         accelerometer = data[i][1:4]
         gyroscope = data[i][4:7]
         rf_P = data[i][7:10]
@@ -423,13 +431,14 @@ if __name__ == '__main__':
         footForce = data[i][31:35]
         i += 1
         lowState_k = LowState(accelerometer, gyroscope, rf_V, lf_V, rr_V, lr_V, footForce)  # read sensors
-        optimal_state_estimate_k, covariance_estimate_k, leg_pos, is_step, rotation_matrix, filter_acc, acc_after_bias, z_k, state_estimate_no_ekf, filter_omega, r_leg_odometry \
+
+        optimal_state_estimate_k, covariance_estimate_k, is_step, rotation_matrix, filter_acc, acc_after_bias, z_k, state_estimate_no_ekf, filter_omega, r_leg_odometry, filter_Foot_Force \
             = pronto_mean(
             lowState_k,
             state_estimate_k_minus,
             covariance_estimate_k_minus,
             reset_commend,
-            imu_acc_k_minus, imu_omega_k_minus, FootForce_k_minus)
+            imu_acc_k_minus, imu_omega_k_minus, FootForce_k_minus, Legs_V_noise)
         t.append(time)
         x.append(optimal_state_estimate_k[0][0])
         y.append(optimal_state_estimate_k[1][0])
@@ -458,13 +467,14 @@ if __name__ == '__main__':
         acc_x.append(accelerometer[0])
         acc_y.append(accelerometer[1])
         acc_z.append(accelerometer[2])
-        roll_dot.append(gyroscope[0])
-        picth_dot.append(gyroscope[1])
-        yaw_dot.append(gyroscope[2])
+        omega_x.append(gyroscope[0])
+        omega_y.append(gyroscope[1])
+        omega_z.append(gyroscope[2])
         Pos_in_base.append(leg_pos)
         isStep.append(is_step)
         R.append(rotation_matrix)
         footForce_vec.append(footForce)
+        filter_footForce_vec.append(filter_Foot_Force)
         print()
         print()
         print("time:", time)
@@ -474,7 +484,7 @@ if __name__ == '__main__':
         covariance_estimate_k_minus = covariance_estimate_k
         imu_acc_k_minus = np.array(filter_acc)
         imu_omega_k_minus = np.array(filter_omega)
-        FootForce_k_minus = np.array(footForce)
+        FootForce_k_minus = np.array(filter_Foot_Force)
         time = time + dt
         if np.sum(isStep[-1]) >= 4:
             delta_time_stepping += dt
@@ -496,10 +506,11 @@ if __name__ == '__main__':
 
     # plots
     all_walking_ind = np.where(is_walking)
-    start_walking_ind = all_walking_ind[0]
+    start_walking_ind = all_walking_ind[0][0]
 
     plt.figure()
     plt.plot(t, footForce_vec, label='force')
+    plt.plot(t, filter_footForce_vec, label='filter force')
     plt.grid()
     plt.legend()
 
@@ -508,21 +519,21 @@ if __name__ == '__main__':
     plt.plot(t, x, label='x')
     plt.plot(t, y, '--', label='y')
     plt.plot(t, z, '-.', label='z')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
     plt.plot(t, vx, label='vx')
     plt.plot(t, vy, '--', label='vy')
     plt.plot(t, vz, '-.', label='vz')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
     plt.plot(t, acc_after_bias_x, label='acc_after_bias_x')
     plt.plot(t, acc_after_bias_y, '--', label='acc_after_bias_y')
     plt.plot(t, acc_after_bias_z, '-.', label='acc_after_bias_z')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
 
@@ -530,21 +541,26 @@ if __name__ == '__main__':
     plt.subplot(3, 1, 1)
     plt.plot(t, vx, label='vx')
     plt.plot(t, vx_mes, '--', label='vx_mes')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.hlines(np.mean(vx[start_walking_ind:-1]), t[0], t[-1], linestyles="dashed", colors="k", label='vx mean')
+    plt.hlines(np.mean(vx_mes[start_walking_ind:-1]), t[0], t[-1], linestyles="dotted", colors="r", label='vx_mes mean')
     plt.plot(t, num_of_step_leg, label='number of stepping legs')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
     plt.plot(t, vy, label='vy')
     plt.plot(t, vy_mes, '--', label='vy_mes')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.hlines(np.mean(vy[start_walking_ind:-1]), t[0], t[-1], linestyles="dashed", colors="k", label='vy mean')
+    plt.hlines(np.mean(vy_mes[start_walking_ind:-1]), t[0], t[-1], linestyles="dotted", colors="r", label='vy_mes mean')
     plt.plot(t, num_of_step_leg, label='number of stepping legs')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
     plt.plot(t, vz, label='vz')
     plt.plot(t, vz_mes, '--', label='vz_mes')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.scatter(t[start_walking_ind], 0, label='start walk')
+    plt.hlines(np.mean(vz[start_walking_ind:-1]), t[0], t[-1], linestyles="dashed", colors="k", label='vz mean')
+    plt.hlines(np.mean(vz_mes[start_walking_ind:-1]), t[0], t[-1], linestyles="dotted", colors="r", label='vz_mes mean')
     plt.plot(t, num_of_step_leg, label='number of stepping legs')
     plt.grid()
     plt.legend()
@@ -564,29 +580,28 @@ if __name__ == '__main__':
     #     plt.pause(0.000000000000000000000000001)
     #     ax.cla()
 
-
     acc_matrix = np.array([acc_x, acc_y, acc_z])
     acc_zero_means = np.expand_dims(np.mean(acc_matrix, axis=1), 1)
     acc_mes_cov = np.cov(acc_matrix - acc_zero_means)
 
-    angular_velocity_matrix = [roll_dot, picth_dot, yaw_dot]
+    angular_velocity_matrix = [omega_x, omega_y, omega_z]
     euler_zero_means = np.expand_dims(np.mean(angular_velocity_matrix, axis=1), 1)
     angular_velocity_mes_cov = np.cov(angular_velocity_matrix - euler_zero_means)
 
     plt.figure()
     plt.subplot(3, 1, 1)
-    plt.plot(t, roll_dot, label='roll_dot')
-    # plt.plot(t, acc_after_bias_x, '--', label='acc after bias x')
+    plt.plot(t, omega_x, label='omega_x')
+    plt.plot(t, acc_after_bias_x, '--', label='acc after bias x')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
-    plt.plot(t, picth_dot, label='pith_dot')
-    # plt.plot(t, acc_after_bias_y, '--', label='acc after bias y')
+    plt.plot(t, omega_y, label='omega_y')
+    plt.plot(t, acc_after_bias_y, '--', label='acc after bias y')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
-    plt.plot(t, yaw_dot, label='yaw_dot')
-    # plt.plot(t, acc_after_bias_z, '--', label='acc after bias z')
+    plt.plot(t, omega_z, label='omega_z')
+    plt.plot(t, acc_after_bias_z, '--', label='acc after bias z')
     plt.grid()
     plt.legend()
 
@@ -621,21 +636,18 @@ if __name__ == '__main__':
     plt.plot(t, filter_acc_x, label='filter accx')
     plt.plot(t, acc_after_bias_x, '--', label='acc after bias x')
     plt.plot(t, acc_x, '-.', label='accx')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 2)
     plt.plot(t, filter_acc_y, label='filter accy')
     plt.plot(t, acc_after_bias_y, '--', label='acc after bias y')
     plt.plot(t, acc_y, '-.', label='accy')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
     plt.subplot(3, 1, 3)
     plt.plot(t, filter_acc_z, label='filter accz')
     plt.plot(t, acc_after_bias_z, '--', label='acc after bias z')
     plt.plot(t, acc_z, '-.', label='accz')
-    # plt.scatter(t[start_walking_ind], 0, label='start walk')
     plt.grid()
     plt.legend()
 
