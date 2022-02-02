@@ -304,6 +304,12 @@ def read_sensor(LowState, state_estimate_k_minus, covariance_estimate_k_minus, r
         rotation_angle = dt * LA.norm(omega)
         rotation_axis = omega / LA.norm(omega)
         q_update = Quaternion(axis=rotation_axis[0], angle=rotation_angle)
+        s = math.sin(rotation_angle / 2);
+        x = rotation_axis[0] * s
+        y = rotation_axis[1] * s
+        z = rotation_axis[2] * s
+        w = math.cos(rotation_angle / 2);
+        q_update = Quaternion(w,x,y,z)
         q_k = q_update * q_k_minus
 
     # quaternion update
