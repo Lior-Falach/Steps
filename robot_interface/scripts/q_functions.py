@@ -35,6 +35,8 @@ def q2R(q):
 def q_mult(q1, q2):#q1*q2
         w0, x0, y0, z0 = q2
         w1, x1, y1, z1 = q1
+        print(q1)
+        print(q2)
 
         return np.array([-x1 * x0 - y1 * y0 - z1 * z0 + w1 * w0,
                         x1 * w0 + y1 * z0 - z1 * y0 + w1 * x0,
@@ -43,7 +45,7 @@ def q_mult(q1, q2):#q1*q2
 
 def w2zq(w): #return the quaternion associated with a small rotation vector given by w*dt
     norm_w=LA.norm(w)
-    return np.array([sin(0.5*norm_w)*w/norm_w,cos(0.5*norm_w)])
+    return np.array([sin(0.5*norm_w)*w[0]/norm_w,sin(0.5*norm_w)*w[1]/norm_w,sin(0.5*norm_w)*w[2]/norm_w,cos(0.5*norm_w)])
 
 def skew_m(v):
     return np.array([[0, -v[2], v[1]],[v[2], 0, -v[0]],[-v[1],v[0],0]])

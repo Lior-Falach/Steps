@@ -18,7 +18,7 @@ def Gamma_func(dt,w):
     return G0, G1, G2, G3
 
 
-def F_func(dt,f,C,w,Qf,Qbf,Qw,Qbw):
+def F_func(dt,f,C,w,Qf,Qbf,Qw,Qbw,Qp,contact):
     f_cross=skew_m(f)
     G0, G1, G2, G3=Gamma_func(dt,w)
     F=np.array([[np.eye(3)      , dt*np.eye(3)   ,  -0.5*dt*dt*np.matmul(C,f_cross), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -0.5*dt*dt*C   , np.zeros([3,3])],  #dr
@@ -29,10 +29,10 @@ def F_func(dt,f,C,w,Qf,Qbf,Qw,Qbw):
     Q=np.array([[((dt**3)/3)*Qf+((dt**5)/20)*Qbf, ((dt**2)/2)*Qf+((dt**4)/8)*Qbf, np.zeros([3,3])                       , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -((dt**3)/6)*Qbf, np.zeros([3,3])],#dr
                 [((dt**2)/2)*Qf+((dt**4)/8)*Qbf , dt*Qf+((dt**3)/3)*Qbf         , np.zeros([3,3])                       , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), -((dt**3)/6)*Qbf, np.zeros([3,3])],#dv
                 [zeros([3,3])                   , zeros([3,3])                  ,dt*Qw+np.matmul(G3+G3.transpose(),Qbw) , np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]), np.zeros([3,3]) ,-np.matmul(G2.transpose(),Qbw)],#q
-                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qf, C)), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3])],
-                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), np.zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qf, C)), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3])],
-                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qf, C)), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3])],
-                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qf, C)), np.zeros([3, 3]), np.zeros([3, 3])],
+                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qp, C)), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3])],
+                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), np.zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qp, C)), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3])],
+                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qp, C)), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3])],
+                [zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), dt * np.matmul(C.transpose(), np.matmul(Qp, C)), np.zeros([3, 3]), np.zeros([3, 3])],
                 [-(dt**3)/6*np.matmul(Qbf, C), -(dt**2)/2*np.matmul(Qbf, C),np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), np.zeros([3, 3]), dt*Qbf,np.zeros([3, 3])],
                 [zeros([3, 3]), zeros([3, 3]), -np.matmul(Qbw, G2),zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), zeros([3, 3]), dt*Qbw]])
 
