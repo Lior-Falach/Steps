@@ -7,7 +7,7 @@ from unitree_legged_msgs.msg import A1HighState
 from unitree_legged_msgs.msg import A1True
 from q_functions import q_mult, w2zq, q2R
 import rospy
-from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Int16MultiArray, Float32MultiArray
 import time
 dt = 1 / 200.0
 gravity = np.array([0, 0, -9.8])
@@ -65,7 +65,7 @@ class Est(object):
         rospy.loginfo("> Subscriber to low_state Low res correctly initialized")
         self.ros_pub_state = rospy.Publisher("/imuC12", A1True, queue_size=1)
         rospy.loginfo("> Publisher to imuC12 correctly initialized")
-        self.ros_pub_touch = rospy.Publisher("/touch", Int16MultiArray, queue_size=1)
+        self.ros_pub_touch = rospy.Publisher("/touch", Float32MultiArray, queue_size=1)
         rospy.loginfo("> Publisher to touch correctly initialized")
         self._last_time_state_rcv = time.time()
 
@@ -84,19 +84,24 @@ class Est(object):
         # Initializing the measurments
         self.IMU_a = np.array([0, 0, 0])
         self.IMU_g = np.array([0, 0, 0])
+        self.alpha=0.5
         self.Foot_force = np.array([0, 0, 0, 0])
         self.Foot_force_bias = np.array([0, 0, 0, 0])
-        self.Contact = Int16MultiArray()
-        self.Contact.data=[]
+        self.Contact = Float32MultiArray()
+        self.Contact.data=[0.0,0.0,0.0,0.0]
         self.TH = 15  # Foot force threshold
         self.Q_f = 0.1*np.eye(3)
         self.Q_bf = 0.01*np.eye(3)
         self.Q_w = 0.1*np.eye(3)
         self.Q_bw = 0.1*np.eye(3)
-        self.Q_p_low=0.1*np.eye(3)
-        self.Q_p_high=100*np.eye(3)
+        self.Q_p=0.1*np.eye(3)
+        self.s1 = np.array([0, 0, 0])
+        self.s2 = np.array([0, 0, 0])
+        self.s3 = np.array([0, 0, 0])
+        self.s4 = np.array([0, 0, 0])
+
         #self.Q = Q_0
-        #self.R = R_0
+        self.R = 0.1*np.eye(12)
 
         self.F_func = F_func
         self.H_func = H_func
@@ -107,20 +112,24 @@ class Est(object):
 
 
     def state_update(self, message):
-        self.IMU_a = message.accel
+        self.IMU_a = np.array(message.accel)
         rospy.loginfo(self.IMU_a)
-        self.IMU_g = message.gyro
-        self.predict_state()
+        self.IMU_g = np.array(message.gyro)
         self.Foot_force_update(message.footForce)
-        self.H, self.y = self.H_func(self.C, self.x.r.pri, self.x.prf.pri, self.x.plf.pri, self.x.prr.pri,
-                                     self.x.prl.pri)
+        self.predict_state()
+        self.s1 = np.array(message.rf_P)
+        self.s2 = np.array(message.lf_P)
+        self.s3 = np.array(message.rr_P)
+        self.s4 = np.array(message.lr_P)
+        self.H, self.y = self.H_func(np.array(q2R(self.x.q.pos)), self.x.r.pri, self.x.prf.pri, self.x.plf.pri, self.x.prr.pri,
+                                     self.x.plr.pri, self.s1, self.s2, self.s3, self.s4)
         # The Inovation Covariance
         self.S = np.matmul(np.matmul(self.H, self.P.pri), self.H.transpose()) + self.R
         # The Kalman Gain
         self.K = np.matmul(np.matmul(self.P.pri, self.H.transpose()), np.linalg.inv(self.S))
         self.dx.total = np.matmul(self.K, self.y)
         self.dx_parts_update()
-        self.P.pos = np.matmul(np.eye() - np.matmul(self.K, self.H), self.P.pri)
+        self.P.pos = np.matmul(np.eye(27) - np.matmul(self.K, self.H), self.P.pri)
         self.post_state_update()
 
     def predict_state(self):
@@ -130,10 +139,6 @@ class Est(object):
         # State update
         self.x.r.pri = self.x.r.pos + dt * self.x.v.pos + 0.5 * dt * dt * (
                     np.matmul(C.transpose(), self.IMU_a - self.x.bf.pos) + gravity)
-        rospy.loginfo( self.IMU_g - self.x.bw.pos)
-        rospy.loginfo(dt * (self.IMU_g - self.x.bw.pos) )
-        rospy.loginfo(w2zq(dt * (self.IMU_g - self.x.bw.pos)))
-        #rospy.loginfo(self.x.q.pos)
         self.x.v.pri = self.x.v.pos + dt * (np.matmul(C, self.IMU_a - self.x.bf.pos) + gravity)
         self.x.q.pri = q_mult(w2zq(dt * (self.IMU_g - self.x.bw.pos)), self.x.q.pos)
         self.x.prf.pri = self.x.prf.pos
@@ -141,13 +146,18 @@ class Est(object):
         self.x.prr.pri = self.x.prr.pos
         self.x.plr.pri = self.x.plr.pos
         # Process covariance and linearized dynamics
-        self.F, self.Q = self.F_func(dt, self.IMU_a - self.x.bf.pos, C, self.IMU_g - self.x.bw.pos,self.Q_f,self.Q_bf,self.Q_w,self.Q_bw,self.Contact)
+        self.F, self.Q = self.F_func(dt, self.IMU_a - self.x.bf.pos, C, self.IMU_g - self.x.bw.pos,self.Q_f,self.Q_bf,self.Q_w,self.Q_bw,self.Q_p,self.Contact.data)
         # prior state covariance
-        self.P.pri = np.matmul(np.matmul(F.transpose(), self.P.pos), F) + self.Q
+        self.P.pri = np.matmul(np.matmul(self.F.transpose(), self.P.pos), self.F) + self.Q
 
     def Foot_force_update(self, FF): # update the foot contact states
-        self.Foot_force = self.alpha * self.Foot_force + (1 - self.alpha) * FF
-        self.Contact.data = (self.Foot_force-self.Foot_force_bias) >= self.TH
+
+        for i in range(4):
+            self.Foot_force[i] = self.alpha * self.Foot_force[i] + (1 - self.alpha) * FF[i]
+            if ((self.Foot_force[i]-self.Foot_force_bias[i]) >= self.TH):
+                self.Contact.data[i] = 1.0
+            else:
+                self.Contact.data[i] = 0.0
 
     def dx_parts_update(self): #Segementing the error state into components
         self.dx.r = self.dx.total[0:3]
@@ -162,7 +172,7 @@ class Est(object):
 
     def post_state_update(self): #Posterior update once the error state has been set
         self.x.r.pos = self.x.r.pri + self.dx.r
-        self.x.v.pos = self.v.r.pri + self.dx.v
+        self.x.v.pos = self.x.v.pri + self.dx.v
         self.x.q.pos = q_mult(w2zq(self.dx.q), self.x.q.pri)
         self.x.prf.pos = self.x.prf.pri + self.dx.prf
         self.x.plf.pos = self.x.plf.pri + self.dx.plf
@@ -170,6 +180,7 @@ class Est(object):
         self.x.plr.pos = self.x.plr.pri + self.dx.plr
         self.x.bf.pos = self.x.bf.pri + self.dx.bf
         self.x.bw.pos = self.x.bw.pri + self.dx.bw
+        rospy.loginfo(self.x.r.pos)
     def run(self):
 
         # --- Set the control rate
