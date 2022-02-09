@@ -8,6 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from Models import A1_FIK
+from std_msgs.msg import Int16MultiArray, Float32MultiArray
+
 
 
 # The class ServoConvert is meant to convert desired angels in real world to pwm
@@ -25,7 +27,7 @@ class A1_plot:
         rospy.init_node('A1_plot')
 
         # --- Create the Subscriber to joint_ang  topic
-        self.ros_sub_state = rospy.Subscriber("/low_state", A1LowState, self.plot_update, queue_size=1)
+        self.ros_sub_state = rospy.Subscriber("/joints", Float32MultiArray, self.plot_update, queue_size=1)
         rospy.loginfo("> Subscriber to low_state correctly initialized")
         self._last_time_state_rcv = time.time()
 
@@ -100,23 +102,9 @@ class A1_plot:
 
 
     def plot_update(self, message):
-        self.FK.Joint_Ang[0, 0] = message.q[3]
-        self.FK.Joint_Ang[0, 1] = message.q[4]
-        self.FK.Joint_Ang[0, 2] = message.q[5]
-
-        self.FK.Joint_Ang[1, 0] = message.q[0]
-        self.FK.Joint_Ang[1, 1] = message.q[1]
-        self.FK.Joint_Ang[1, 2] = message.q[2]
-
-        self.FK.Joint_Ang[2, 0] = message.q[9]
-        self.FK.Joint_Ang[2, 1] = message.q[10]
-        self.FK.Joint_Ang[2, 2] = message.q[11]
-
-        self.FK.Joint_Ang[3, 0] = message.q[6]
-        self.FK.Joint_Ang[3, 1] = message.q[7]
-        self.FK.Joint_Ang[3, 2] = message.q[8]
-
         for ii in range(4):
+            for m in range(3):
+                self.FK.Joint_Ang[0, 0]=message.data[m+ 3*ii]
             self.FK.Forw_kin(ii)
         self.plot_spot_update()
 
@@ -125,8 +113,8 @@ class A1_plot:
 
     def plot_spot_update(self):
         # rospy.loginfo(self.F_pos[3,:])
-        body_x = np.array([self.B_L / 2, self.B_L / 2, -self.B_L / 2, -self.B_L / 2, self.B_L / 2])
-        body_y = np.array([self.B_W / 2, -self.B_W / 2, -self.B_W / 2, self.B_W / 2, self.B_W / 2])
+        body_x = np.array([self.FK.B_L / 2, self.FK.B_L / 2, -self.FK.B_L / 2, -self.FK.B_L / 2, self.FK.B_L / 2])
+        body_y = np.array([self.FK.B_W / 2, -self.FK.B_W / 2, -self.FK.B_W / 2, self.FK.B_W / 2, self.FK.B_W / 2])
         body_z = np.array([0, 0, 0, 0, 0])
         self.LB.set_xdata(body_x)
         self.LB.set_ydata(body_y)

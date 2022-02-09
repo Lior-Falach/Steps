@@ -30,15 +30,15 @@ class A1_FIK:
         # The following array contains the tarnslation needed to construct the homogeneous transformation
         # each row corresponds to a leg in order (LF,RF,LR,RR)
         # Body Shoulder translation
-        self.Tr01 = np.array([[self.B_L / 2, self.B_W / 2, 0],
-                              [self.B_L / 2, -self.B_W / 2, 0],
-                              [-self.B_L / 2, self.B_W / 2, 0],
-                              [-self.B_L / 2, -self.B_W / 2, 0]])
+        self.Tr01 = np.array([[self.B_L / 2, -self.B_W / 2, 0],
+                              [self.B_L / 2, self.B_W / 2, 0],
+                              [-self.B_L / 2, -self.B_W / 2, 0],
+                              [-self.B_L / 2, self.B_W / 2, 0]])
         # Shoulder to hip translation
-        self.Tr12 = np.array([[0, self.H_L, 0],
-                              [0, -self.H_L, 0],
+        self.Tr12 = np.array([[0, -self.H_L, 0],
                               [0, self.H_L, 0],
-                              [0, -self.H_L, 0]])
+                              [0, -self.H_L, 0],
+                              [0, self.H_L, 0]])
         # Hip to knee translation
         self.Tr23 = np.array([[0, 0, -self.T_L],
                               [0, 0, -self.T_L],
