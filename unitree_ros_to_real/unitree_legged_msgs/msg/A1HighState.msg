@@ -1,0 +1,11 @@
+float32[3] accel
+float32[3] gyro
+float32[3] rf_P
+float32[3] lf_P
+float32[3] rr_P
+float32[3] lr_P
+float32[3] rf_V
+float32[3] lf_V
+float32[3] rr_V
+float32[3] lr_V
+int16[4] footForce
